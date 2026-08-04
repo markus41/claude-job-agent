@@ -1,0 +1,33 @@
+{
+  "jobs": [
+    {
+      "id": 4444001,
+      "internal_job_id": 220001,
+      "title": "Senior Software Engineer, Platform",
+      "updated_at": "2026-07-20T12:00:00-04:00",
+      "first_published": "2026-07-01T12:00:00-04:00",
+      "requisition_id": "R-1001",
+      "location": { "name": "Remote - US" },
+      "absolute_url": "https://boards.greenhouse.io/acmecorp/jobs/4444001",
+      "metadata": [],
+      "content": "&lt;p&gt;Build our platform team&amp;rsquo;s core services.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Own reliability for the job pipeline&lt;/li&gt;&lt;li&gt;Mentor engineers&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Compensation: $150,000 - $180,000 per year plus equity.&lt;/p&gt;",
+      "departments": [{ "id": 1, "name": "Engineering" }],
+      "offices": [{ "id": 2, "name": "Remote" }]
+    },
+    {
+      "id": 4444002,
+      "internal_job_id": 220002,
+      "title": "Office Manager",
+      "updated_at": "2026-07-18T09:00:00-04:00",
+      "first_published": "2026-07-18T09:00:00-04:00",
+      "requisition_id": "R-1002",
+      "location": { "name": "Denver, CO" },
+      "absolute_url": "https://boards.greenhouse.io/acmecorp/jobs/4444002",
+      "metadata": [],
+      "content": "&lt;p&gt;Keep our Denver office running smoothly. Five days a week in office.&lt;/p&gt;",
+      "departments": [{ "id": 3, "name": "Operations" }],
+      "offices": [{ "id": 4, "name": "Denver" }]
+    }
+  ],
+  "meta": { "total": 2 }
+}

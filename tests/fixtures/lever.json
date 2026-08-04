@@ -1,0 +1,50 @@
+[
+  {
+    "id": "a1b2c3d4-0000-4000-8000-1234567890ab",
+    "text": "Staff Product Engineer",
+    "hostedUrl": "https://jobs.lever.co/betaworks/a1b2c3d4-0000-4000-8000-1234567890ab",
+    "applyUrl": "https://jobs.lever.co/betaworks/a1b2c3d4-0000-4000-8000-1234567890ab/apply",
+    "createdAt": 1753000000000,
+    "workplaceType": "remote",
+    "country": "US",
+    "categories": {
+      "commitment": "Full-time",
+      "location": "Remote — North America",
+      "team": "Product Engineering",
+      "department": "Engineering"
+    },
+    "descriptionPlain": "Ship product end to end with a small senior team.",
+    "description": "<div>Ship product end to end with a small senior team.</div>",
+    "lists": [
+      {
+        "text": "What you'll do",
+        "content": "<li>Build user-facing features</li><li>Talk to customers weekly</li>"
+      }
+    ],
+    "additionalPlain": "We are an equal opportunity employer.",
+    "additional": "<p>We are an equal opportunity employer.</p>",
+    "salaryRange": {
+      "min": 170000,
+      "max": 210000,
+      "currency": "USD",
+      "interval": "per-year-salary"
+    }
+  },
+  {
+    "id": "b2c3d4e5-0000-4000-8000-abcdefabcdef",
+    "text": "Engineering Manager, Infrastructure",
+    "hostedUrl": "https://jobs.lever.co/betaworks/b2c3d4e5-0000-4000-8000-abcdefabcdef",
+    "applyUrl": "https://jobs.lever.co/betaworks/b2c3d4e5-0000-4000-8000-abcdefabcdef/apply",
+    "createdAt": 1752400000000,
+    "workplaceType": "hybrid",
+    "country": "US",
+    "categories": {
+      "commitment": "Full-time",
+      "location": "New York, NY",
+      "team": "Infrastructure",
+      "department": "Engineering"
+    },
+    "description": "<p>Hybrid in NYC (3 days on-site). Lead a team of six. Base pay $140k - $165k depending on experience.</p>",
+    "lists": []
+  }
+]

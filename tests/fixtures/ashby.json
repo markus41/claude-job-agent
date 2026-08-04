@@ -1,0 +1,38 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "title": "Product Designer",
+      "department": "Design",
+      "team": "Product",
+      "employmentType": "FullTime",
+      "location": "Remote",
+      "secondaryLocations": [],
+      "publishedAt": "2026-07-15T00:00:00Z",
+      "isListed": true,
+      "isRemote": true,
+      "jobUrl": "https://jobs.ashbyhq.com/gammalabs/f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "applyUrl": "https://jobs.ashbyhq.com/gammalabs/f47ac10b-58cc-4372-a567-0e02b2c3d479/application",
+      "descriptionPlain": "Design core product flows from research to ship.",
+      "descriptionHtml": "<p>Design core product flows from research to ship.</p>",
+      "compensation": {
+        "compensationTierSummary": "$130K – $160K • Offers Equity",
+        "scrapeableCompensationSalarySummary": "$130K - $160K"
+      }
+    },
+    {
+      "id": "05a2c1e0-0000-4000-8000-9999888877aa",
+      "title": "Internal Draft Role",
+      "department": "Design",
+      "employmentType": "FullTime",
+      "location": "Remote",
+      "secondaryLocations": [],
+      "publishedAt": "2026-07-16T00:00:00Z",
+      "isListed": false,
+      "isRemote": true,
+      "jobUrl": "https://jobs.ashbyhq.com/gammalabs/05a2c1e0-0000-4000-8000-9999888877aa",
+      "descriptionPlain": "Should never appear in results."
+    }
+  ]
+}

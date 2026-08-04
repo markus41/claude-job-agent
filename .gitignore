@@ -1,0 +1,26 @@
+# --- Private candidate data: NEVER commit ---
+profile/*
+!profile/*.example.*
+applications/
+data/
+
+# Live config (contains personal targets/comp): examples are committed instead
+config/companies.json
+config/policy.json
+
+# Secrets
+.env
+.env.*
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local scratch
+*.local.*
+tmp/

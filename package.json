@@ -1,0 +1,36 @@
+{
+  "name": "claude-job-agent",
+  "version": "0.1.0",
+  "description": "Autonomous job-application agent system built on Claude Code — ATS sourcing, fit scoring, tailored applications, and human-gated browser submission.",
+  "type": "module",
+  "bin": {
+    "jobagent": "bin/jobagent.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "discover": "node bin/jobagent.mjs discover",
+    "shortlist": "node bin/jobagent.mjs shortlist",
+    "status": "node bin/jobagent.mjs status",
+    "doctor": "node bin/jobagent.mjs doctor"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/markus41/claude-job-agent.git"
+  },
+  "keywords": [
+    "claude-code",
+    "agents",
+    "job-search",
+    "job-applications",
+    "ats",
+    "greenhouse",
+    "lever",
+    "ashby",
+    "playwright",
+    "automation"
+  ],
+  "license": "MIT"
+}
