@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(node bin/jobagent.mjs discover*)",
+      "Bash(node bin/jobagent.mjs shortlist*)",
+      "Bash(node bin/jobagent.mjs status*)",
+      "Bash(node bin/jobagent.mjs show*)",
+      "Bash(node bin/jobagent.mjs detect*)",
+      "Bash(node bin/jobagent.mjs doctor*)",
+      "Bash(node bin/jobagent.mjs import-scores*)",
+      "Bash(node bin/jobagent.mjs ingest*)",
+      "Bash(node bin/jobagent.mjs package*)",
+      "Bash(node bin/jobagent.mjs record*)",
+      "Bash(node bin/jobagent.mjs disarm*)",
+      "Bash(node bin/jobagent.mjs help*)",
+      "Bash(npm test*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|mcp__.*playwright.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/submit-gate.mjs"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__.*playwright.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/audit-log.mjs"
+          }
+        ]
+      }
+    ]
+  }
+}
