@@ -1,0 +1,34 @@
+{
+  "_readme": [
+    "Copy to config/policy.json (jobagent init does this). Values here override",
+    "the defaults in src/lib/config.mjs (DEFAULT_POLICY). The submit-gate hook",
+    "reads this file — allowlist.hosts controls where the browser agent may",
+    "navigate while an apply session is armed. The approved application's own",
+    "host is allowed automatically; add extra hosts only for multi-domain flows."
+  ],
+  "allowlist": {
+    "hosts": [
+      "boards.greenhouse.io",
+      "job-boards.greenhouse.io",
+      "jobs.lever.co",
+      "jobs.ashbyhq.com",
+      "*.myworkdayjobs.com"
+    ]
+  },
+  "caps": {
+    "maxApplicationsPerDay": 10,
+    "maxJobAgeDays": 60,
+    "shortlistLimit": 40
+  },
+  "approval": {
+    "mode": "manual",
+    "sessionTtlMinutes": 60
+  },
+  "tailor": {
+    "minScore": 65,
+    "topN": 5
+  },
+  "followUps": {
+    "days": [7, 14]
+  }
+}

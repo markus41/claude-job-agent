@@ -1,0 +1,45 @@
+{
+  "_readme": [
+    "Copy to profile/answers.json (jobagent init does this). A maintained Q&A",
+    "bank keeps screening answers consistent across every application. The",
+    "tailor agent maps these onto each posting's questions; anything it cannot",
+    "answer truthfully from here is flagged NEEDS HUMAN INPUT instead of guessed."
+  ],
+  "answers": [
+    {
+      "q": "Why do you want to work here?",
+      "a": "Template: 1 sentence on what the company builds that genuinely interests me + 1 sentence connecting it to my platform/ingestion experience. The tailor agent personalizes per company from the posting only.",
+      "tags": ["motivation"]
+    },
+    {
+      "q": "Are you legally authorized to work in the United States?",
+      "a": "Yes. US citizen, no sponsorship required.",
+      "tags": ["authorization"]
+    },
+    {
+      "q": "Will you now or in the future require sponsorship?",
+      "a": "No.",
+      "tags": ["authorization"]
+    },
+    {
+      "q": "What are your salary expectations?",
+      "a": "Targeting $160k-$185k base depending on total comp structure; flexible for the right role.",
+      "tags": ["compensation"]
+    },
+    {
+      "q": "When can you start?",
+      "a": "Two weeks from accepting an offer.",
+      "tags": ["logistics"]
+    },
+    {
+      "q": "Are you willing to relocate?",
+      "a": "I'm not relocating at this time; I'm targeting remote roles (US time zones).",
+      "tags": ["logistics"]
+    },
+    {
+      "q": "How did you hear about this role?",
+      "a": "Company careers page.",
+      "tags": ["logistics"]
+    }
+  ]
+}

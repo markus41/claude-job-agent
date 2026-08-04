@@ -1,0 +1,49 @@
+{
+  "_readme": [
+    "Copy to profile/profile.json (jobagent init does this) and replace every",
+    "value. This file is gitignored — your real data never leaves your machine.",
+    "The fit-scorer, tailor, and browser-apply agents all treat this file plus",
+    "resume.md as the ONLY source of truth about you."
+  ],
+  "name": "Jordan Example",
+  "email": "jordan@example.com",
+  "phone": "+1 555 010 0100",
+  "location": "Denver, CO, USA",
+  "links": {
+    "linkedin": "https://www.linkedin.com/in/jordan-example",
+    "github": "https://github.com/jordan-example",
+    "portfolio": ""
+  },
+  "workAuthorization": "US citizen — no sponsorship required",
+  "yearsExperience": 8,
+  "targets": {
+    "titles": ["Senior Software Engineer", "Staff Software Engineer", "Platform Engineer"],
+    "titleKeywordsInclude": ["engineer", "developer"],
+    "titleKeywordsExclude": ["recruiter", "staffing", "unpaid", "intern"],
+    "seniority": ["senior", "staff"],
+    "remote": "remote-only",
+    "locations": ["Denver"],
+    "salaryFloor": 150000,
+    "currency": "USD",
+    "industries": {
+      "prefer": ["developer tools", "infrastructure", "fintech"],
+      "avoid": ["gambling", "adtech"]
+    },
+    "dealBreakers": ["security clearance", "100% travel"]
+  },
+  "skills": {
+    "expert": ["TypeScript", "Node.js", "PostgreSQL", "AWS"],
+    "proficient": ["Go", "Kubernetes", "Terraform", "React"],
+    "familiar": ["Rust", "Kafka"]
+  },
+  "education": [
+    { "degree": "B.S. Computer Science", "school": "State University", "year": 2018 }
+  ],
+  "screeningDefaults": {
+    "salaryExpectation": "Targeting $160k-$185k base depending on total comp structure",
+    "startDate": "Two weeks from offer",
+    "relocation": false,
+    "clearance": "none",
+    "referralSource": "Company careers page"
+  }
+}

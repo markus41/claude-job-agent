@@ -1,0 +1,15 @@
+{
+  "_readme": [
+    "Target companies to poll. Copy to config/companies.json (jobagent init does this).",
+    "Known-ATS entries need { company, ats, slug } — find the slug with:",
+    "  node bin/jobagent.mjs detect <careers-page-url>",
+    "Entries with only { company, careersUrl } are chased by the job-discovery agent via Firecrawl.",
+    "The three examples below were live public boards as of 2026-08; replace them with YOUR targets."
+  ],
+  "targets": [
+    { "company": "Cloudflare", "ats": "greenhouse", "slug": "cloudflare" },
+    { "company": "Palantir", "ats": "lever", "slug": "palantir" },
+    { "company": "Linear", "ats": "ashby", "slug": "linear" },
+    { "company": "Example Startup (no public ATS)", "careersUrl": "https://example.com/careers" }
+  ]
+}
