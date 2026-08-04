@@ -4,7 +4,7 @@ End-to-end setup on macOS, Linux, or Windows.
 
 ## 1. Prerequisites
 
-- **Node.js 20+** — `node -v`
+- **Node.js 22+** — `node -v`
 - **git**
 - **Claude Code** — desktop app or CLI ([install docs](https://code.claude.com/docs))
 - Optional: a **Firecrawl** API key (only needed for companies without a

@@ -50,7 +50,7 @@ if you forget them.
 
 ## Development notes
 
-- Node 20+, ES modules, **zero runtime dependencies** — keep it that way.
+- Node 22+, ES modules, **zero runtime dependencies** — keep it that way.
 - Tests: `npm test` (node --test). Every change to `src/lib/` needs tests;
   `gate.mjs` changes especially (it is the enforcement layer).
 - The three ATS clients were verified against live boards (2026-08). If a

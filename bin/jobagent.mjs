@@ -96,7 +96,7 @@ async function cmdDoctor() {
   };
 
   const [major] = process.versions.node.split('.').map(Number);
-  check(major >= 20, `Node.js >= 20 (found ${process.versions.node})`);
+  check(major >= 22, `Node.js >= 22 (found ${process.versions.node})`);
 
   const present = profileFilesPresent();
   check(present.profile, 'profile/profile.json exists', 'run: node bin/jobagent.mjs init');

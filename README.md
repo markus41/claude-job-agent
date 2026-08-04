@@ -30,7 +30,7 @@ flowchart LR
 Two layers, deliberately separated:
 
 - **Deterministic core** (`bin/jobagent.mjs` + `src/`) — polling, normalizing,
-  filtering, state, and the audit log. Plain Node 20+, zero dependencies,
+  filtering, state, and the audit log. Plain Node 22+, zero dependencies,
   fully unit-tested. Agents *call* it; they don't reimplement it.
 - **Agent layer** (`.claude/`) — five scoped subagents and eight slash
   commands orchestrated by Claude Code, with a `PreToolUse` hook that
@@ -73,7 +73,7 @@ The long version — including the exact rule→enforcement mapping — is in
 
 ## Quickstart
 
-Prereqs: Node 20+, [Claude Code](https://code.claude.com), git.
+Prereqs: Node 22+, [Claude Code](https://code.claude.com), git.
 
 ```bash
 git clone https://github.com/markus41/claude-job-agent.git
