@@ -1,0 +1,21 @@
+{
+  "name": "claude-job-agent",
+  "owner": {
+    "name": "Markus Ahling",
+    "url": "https://github.com/markus41"
+  },
+  "metadata": {
+    "description": "Marketplace for the claude-job-agent companion plugin — guided install and help for the job-application pipeline.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "job-agent",
+      "source": "./plugins/job-agent",
+      "description": "Companion for claude-job-agent: /job-agent:install walks you through a full guided setup from any folder; /job-agent:help explains the workflow.",
+      "version": "0.2.0",
+      "author": { "name": "Markus Ahling" },
+      "keywords": ["job-search", "applications", "onboarding"]
+    }
+  ]
+}

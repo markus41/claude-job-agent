@@ -14,6 +14,9 @@
       "Bash(node bin/jobagent.mjs record*)",
       "Bash(node bin/jobagent.mjs disarm*)",
       "Bash(node bin/jobagent.mjs help*)",
+      "Bash(node bin/jobagent.mjs upload*)",
+      "Bash(node bin/jobagent.mjs policy*)",
+      "Bash(node bin/jobagent.mjs init*)",
       "Bash(npm test*)"
     ],
     "deny": [
@@ -22,6 +25,16 @@
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/first-run.mjs"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash|mcp__.*playwright.*",

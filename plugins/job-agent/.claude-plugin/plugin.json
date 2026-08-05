@@ -1,0 +1,13 @@
+{
+  "name": "job-agent",
+  "version": "0.2.0",
+  "description": "Companion plugin for claude-job-agent: guided install (/job-agent:install) and workflow help (/job-agent:help). The pipeline itself runs project-scoped inside the claude-job-agent folder, where its safety hooks live.",
+  "author": {
+    "name": "Markus Ahling",
+    "url": "https://github.com/markus41"
+  },
+  "homepage": "https://github.com/markus41/claude-job-agent",
+  "repository": "https://github.com/markus41/claude-job-agent",
+  "license": "MIT",
+  "keywords": ["job-search", "applications", "ats", "onboarding"]
+}
