@@ -14,17 +14,21 @@ external service.
 1. Run `node bin/jobagent.mjs shortlist --json` (add `--limit N` if the
    orchestrator asked for a specific batch size) and parse the `items` array.
    If it is empty, report that and stop.
-2. Read `profile/profile.json` and `profile/resume.md` — these are ground
-   truth about the candidate. Do not embellish them.
-3. Score every item independently on 0–100:
-   - **Must-have skills coverage (35)** — candidate evidence vs. the posting's
-     hard requirements. Missing must-haves cost heavily.
-   - **Title & seniority fit (20)** — target titles/seniority vs. the role.
-   - **Location / workplace fit (15)** — remote policy, cities, time zones.
-   - **Compensation fit (10)** — posted comp vs. the floor; unknown comp = 5
-     of 10 plus a flag.
-   - **Domain & industry fit (10)** — preferred/avoided industries.
-   - **Trajectory & red flags (10)** — growth story vs. flags (vague role,
+2. Read `profile/profile.json`, `profile/resume.md`, and (if present)
+   `profile/achievements.json` — these are ground truth about the candidate.
+   Achievements count as evidence for skills/impact even when the resume
+   summarizes them thinly. Do not embellish any of it.
+3. Get the rubric weights: run `node bin/jobagent.mjs policy` and use
+   `scoring.weights` (they sum to 100). Score every item independently on
+   0–100 across these dimensions:
+   - **mustHaveSkills** — candidate evidence vs. the posting's hard
+     requirements. Missing must-haves cost heavily.
+   - **titleSeniority** — target titles/seniority vs. the role.
+   - **locationWorkplace** — remote policy, cities, time zones.
+   - **compensation** — posted comp vs. the floor; unknown comp earns half
+     the dimension plus a flag.
+   - **domainIndustry** — preferred/avoided industries.
+   - **trajectoryFlags** — growth story vs. red flags (vague role,
      unrealistic stack breadth, contract-disguised-as-FTE, etc.).
 4. Verdicts: `strong` ≥ 80, `good` 65–79, `weak` 50–64, `reject` < 50.
 5. Write the results as a JSON array to `data/scores.pending.json`:

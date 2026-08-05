@@ -2,15 +2,16 @@
 // jobagent — deterministic CLI core of claude-job-agent.
 // Agents call these subcommands; humans use them directly too. The one
 // command agents may NEVER run is `approve` (see docs/SAFETY.md).
-import { copyFileSync, existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { basename, extname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
+import { autoPreflight, buildAttestation, readAttestation } from '../src/lib/auto.mjs';
 import { loadCompanies, loadPolicy, loadProfile, paths, profileFilesPresent } from '../src/lib/config.mjs';
 import { detectAts, normalizeManual } from '../src/lib/normalize.mjs';
 import {
-  approveApplication, createApplication, disarmSession, getApp, getJob,
-  importScores, loadApps, recordStatus, upsertJobs,
+  approveApplication, autoArm, createApplication, disarmSession, getApp, getJob,
+  importScores, loadApps, recordStatus, revokeAttestation, saveAttestation, upsertJobs,
 } from '../src/lib/store.mjs';
 import { ensureDir, readJson } from '../src/lib/util.mjs';
 import { discover } from '../src/pipeline/discover.mjs';
@@ -24,6 +25,8 @@ Usage: node bin/jobagent.mjs <command> [options]
 Setup
   init                        Copy example config/profile files into place
   doctor                      Check the environment and configuration
+  upload <file>               Copy a resume/source document into profile/uploads/
+  policy                      Print the effective (merged) policy as JSON
 
 Sourcing
   discover                    Poll all configured ATS boards into the job store
@@ -39,6 +42,14 @@ Scoring & tailoring
 Submission (human-gated)
   approve <appId>             HUMAN ONLY: approve a queued application + arm the browser gate
   disarm                      Disarm the apply session (approved apps drop back to queued)
+
+Auto-submit mode (batch authorization — see docs/SAFETY.md)
+  auto-enable [--batch N] [--hours H] [--min-score S]
+                              HUMAN ONLY: authorize the next N submissions
+  auto-status                 Show the current batch authorization
+  auto-revoke                 Cancel the batch authorization immediately
+  auto-arm <appId>            Arm the gate for one application inside the batch
+  auto-next [--json]          List queued applications eligible for auto-submit
   record <appId> <status> [--note "..."] [--force]
                               Record a lifecycle transition (tailored, queued, submitted,
                               confirmed, blocked, rejected, interview, offer, closed, withdrawn)
@@ -65,12 +76,14 @@ function ensureBaseDirs() {
 async function cmdInit() {
   const p = paths();
   ensureBaseDirs();
+  ensureDir(p.uploadsDir);
   const pairs = [
     [join(p.configDir, 'companies.example.json'), p.companiesFile],
     [join(p.configDir, 'policy.example.json'), p.policyFile],
     [join(p.profileDir, 'profile.example.json'), p.profileFile],
     [join(p.profileDir, 'resume.example.md'), p.resumeFile],
     [join(p.profileDir, 'answers.example.json'), p.answersFile],
+    [join(p.profileDir, 'achievements.example.json'), p.achievementsFile],
   ];
   for (const [src, dest] of pairs) {
     if (existsSync(dest)) {
@@ -82,8 +95,11 @@ async function cmdInit() {
       out(`  missing ${src} — cannot scaffold`);
     }
   }
-  out('\nNext: edit profile/profile.json, profile/resume.md, profile/answers.json,');
-  out('config/companies.json and config/policy.json — then run: node bin/jobagent.mjs doctor');
+  out('\nNext (easiest): open Claude Code in this folder and run /setup — it interviews');
+  out('you, imports your existing resume, and fills all of these in for you.');
+  out('Or edit by hand: profile/profile.json, profile/resume.md, profile/answers.json,');
+  out('profile/achievements.json, config/companies.json, config/policy.json —');
+  out('then run: node bin/jobagent.mjs doctor');
 }
 
 async function cmdDoctor() {
@@ -114,6 +130,11 @@ async function cmdDoctor() {
     check((policy.allowlist?.hosts ?? []).length > 0, 'policy allowlist is non-empty');
     check(policy.approval?.mode === 'manual', 'approval mode is "manual" (human approves each submission)',
       'auto-approval is intentionally unsupported; keep approval.mode = "manual"');
+    const weights = Object.values(policy.scoring?.weights ?? {});
+    const weightSum = weights.reduce((a, b) => a + b, 0);
+    check(weights.length === 0 || weightSum === 100,
+      `scoring.weights sum to 100 (currently ${weightSum})`,
+      'adjust scoring.weights in config/policy.json so the rubric weights total exactly 100');
   } catch (err) {
     check(false, 'config/policy.json valid', err.message);
   }
@@ -128,8 +149,47 @@ async function cmdDoctor() {
   check(existsSync(join(p.root, '.claude', 'hooks', 'submit-gate.mjs')), 'submit gate hook present');
   check(existsSync(join(p.root, '.mcp.json')), '.mcp.json present (Playwright MCP config)');
 
+  // Informational (never fail the doctor): personalization extras.
+  const info = (present2, label, hint) =>
+    out(`  ${present2 ? 'PASS' : 'INFO'}  ${label}${present2 ? '' : `\n        → ${hint}`}`);
+  info(present.achievements, 'profile/achievements.json (optional but recommended)',
+    'run /setup or copy profile/achievements.example.json — quantified wins make tailoring much stronger');
+  info(present.resumePdf, 'profile/resume.pdf for form uploads',
+    'export your resume to PDF (Word/Google Docs, or pandoc) so /apply can upload it');
+
   out(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
   if (failures > 0) process.exit(1);
+}
+
+async function cmdUpload(file) {
+  if (!file) fail('usage: jobagent upload <path-to-resume-or-source-doc>');
+  const src = file.replace(/^["']|["']$/g, '');
+  if (!existsSync(src)) fail(`file not found: ${src}`);
+  const ALLOWED = new Set(['.pdf', '.md', '.txt', '.docx', '.doc', '.rtf', '.html']);
+  const ext = extname(src).toLowerCase();
+  if (!ALLOWED.has(ext)) {
+    fail(`unsupported file type "${ext}" — allowed: ${[...ALLOWED].join(', ')}`);
+  }
+  const p = paths();
+  ensureDir(p.uploadsDir);
+  let destName = basename(src);
+  let dest = join(p.uploadsDir, destName);
+  if (existsSync(dest)) {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    destName = `${basename(src, ext)}-${stamp}${ext}`;
+    dest = join(p.uploadsDir, destName);
+  }
+  copyFileSync(src, dest);
+  out(`Uploaded → profile/uploads/${destName}`);
+  out('This folder is gitignored — the file stays on this machine.');
+  if (ext === '.docx' || ext === '.doc') {
+    out('Note: Claude reads PDF/MD/TXT best. If /setup struggles with this file, export a PDF and upload that instead.');
+  }
+  out('Next: run /setup in Claude Code to build your profile from it.');
+}
+
+async function cmdPolicy() {
+  out(JSON.stringify(loadPolicy(), null, 2));
 }
 
 async function cmdDiscover() {
@@ -286,6 +346,163 @@ async function cmdDisarm() {
   out(existed ? 'Apply session disarmed.' : 'No apply session was armed.');
 }
 
+// --- Auto-submit mode -----------------------------------------------------------
+
+function resumePdfAvailable() {
+  const p = paths();
+  if (existsSync(p.resumePdfFile)) return true;
+  if (!existsSync(p.uploadsDir)) return false;
+  return readdirSync(p.uploadsDir).some((f) => f.toLowerCase().endsWith('.pdf'));
+}
+
+function eligibleForAuto(policy, attestation) {
+  const apps = loadApps().apps;
+  const hasResumePdf = resumePdfAvailable();
+  const queued = Object.values(apps).filter((a) => a.status === 'queued');
+  return queued.map((app) => {
+    const job = getJob(app.jobId);
+    const blockers = autoPreflight({ app, job, policy, attestation, apps, hasResumePdf });
+    return {
+      appId: app.id,
+      company: app.company,
+      title: app.title,
+      score: job?.score?.value ?? null,
+      eligible: blockers.length === 0,
+      blockers,
+    };
+  }).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+}
+
+async function cmdAutoEnable(args) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    fail('auto-enable requires an interactive terminal — a human must authorize the batch personally.', 5);
+  }
+  const { values } = parseArgs({
+    args,
+    options: {
+      batch: { type: 'string' },
+      hours: { type: 'string' },
+      'min-score': { type: 'string' },
+    },
+  });
+  const policy = loadPolicy();
+  if (policy.approval?.mode !== 'auto') {
+    fail('approval.mode is "manual". Set it to "auto" in config/policy.json first (read docs/SAFETY.md § Auto-submit before you do).', 8);
+  }
+  const cfg = policy.approval.auto ?? {};
+  const batch = Number(values.batch ?? cfg.maxBatch ?? 10);
+  const hours = Number(values.hours ?? cfg.ttlHours ?? 12);
+  const minScore = Number(values['min-score'] ?? cfg.requireScore ?? 80);
+  if (!Number.isInteger(batch) || batch < 1) fail('--batch must be a positive whole number');
+  if (!(hours > 0)) fail('--hours must be greater than 0');
+  if (!(minScore >= 0 && minScore <= 100)) fail('--min-score must be between 0 and 100');
+
+  const preview = eligibleForAuto(policy, buildAttestation({ batchLimit: batch, ttlHours: hours, requireScore: minScore }));
+  const ready = preview.filter((p) => p.eligible);
+
+  out('AUTO-SUBMIT AUTHORIZATION\n');
+  out(`  You are authorizing up to ${batch} application(s) to be submitted WITHOUT`);
+  out(`  reviewing each one, over the next ${hours} hour(s), scoring ${minScore}+.\n`);
+  out(`  Ready to go out right now (${ready.length}):`);
+  for (const item of ready.slice(0, batch)) {
+    out(`    ${item.appId}  [${item.score}]  ${item.company} — ${item.title}`);
+  }
+  if (!ready.length) out('    (none yet — packages must be tailored and queued first)');
+  const blocked = preview.filter((p) => !p.eligible);
+  if (blocked.length) {
+    out(`\n  Queued but NOT eligible (${blocked.length}) — these still need you:`);
+    for (const item of blocked.slice(0, 10)) {
+      out(`    ${item.appId}  ${item.company} — ${item.title}`);
+      for (const b of item.blockers) out(`        · ${b}`);
+    }
+  }
+  out('\n  These go out under your name. Read at least one package in applications/');
+  out('  before authorizing — the agent will not stop to ask you again.');
+  out('  Cancel anytime with: node bin/jobagent.mjs auto-revoke\n');
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const phrase = `authorize ${batch}`;
+  const answer = await rl.question(`Type "${phrase}" to confirm: `);
+  rl.close();
+  if (answer.trim().toLowerCase() !== phrase) fail('confirmation did not match — nothing authorized.');
+
+  const att = saveAttestation(
+    buildAttestation({ batchLimit: batch, ttlHours: hours, requireScore: minScore, note: 'cli auto-enable' })
+  );
+  out(`\nAuthorized: ${att.batchLimit} submission(s) until ${att.expiresAt}.`);
+  out('Run /auto-apply in Claude Code to work through the batch.');
+}
+
+async function cmdAutoStatus(args) {
+  const { values } = parseArgs({ args, options: { json: { type: 'boolean', default: false } } });
+  const policy = loadPolicy();
+  const att = readAttestation();
+  const eligible = eligibleForAuto(policy, att);
+  if (values.json) {
+    out(JSON.stringify({ mode: policy.approval?.mode, attestation: att, eligible }, null, 2));
+    return;
+  }
+  out(`MODE   ${policy.approval?.mode}`);
+  if (!att) {
+    out('BATCH  none — a human must run: node bin/jobagent.mjs auto-enable');
+  } else {
+    const state = att.expired ? 'EXPIRED' : att.exhausted ? 'USED UP' : 'ACTIVE';
+    out(`BATCH  ${state} — ${att.used}/${att.batchLimit} used, min score ${att.requireScore}, expires ${att.expiresAt}`);
+  }
+  const ready = eligible.filter((e) => e.eligible);
+  out(`READY  ${ready.length} queued application(s) eligible for auto-submit`);
+  for (const item of ready) out(`  ${item.appId}  [${item.score}]  ${item.company} — ${item.title}`);
+  const blocked = eligible.filter((e) => !e.eligible);
+  if (blocked.length) {
+    out(`\nBLOCKED (${blocked.length}):`);
+    for (const item of blocked) {
+      out(`  ${item.appId}  ${item.company} — ${item.title}`);
+      for (const b of item.blockers) out(`      · ${b}`);
+    }
+  }
+}
+
+async function cmdAutoRevoke() {
+  const existed = revokeAttestation();
+  disarmSession({ quiet: true });
+  out(existed
+    ? 'Batch authorization revoked and any armed session disarmed.'
+    : 'No batch authorization was active (session disarmed anyway).');
+}
+
+async function cmdAutoArm(appId) {
+  if (!appId) fail('usage: jobagent auto-arm <appId>');
+  const policy = loadPolicy();
+  try {
+    const { session, attestation } = autoArm(appId, {
+      policy,
+      hasResumePdf: resumePdfAvailable(),
+    });
+    out(`Armed ${appId} for ${session.hosts.join(', ')} until ${session.expiresAt}.`);
+    out(`Batch: ${attestation.used}/${attestation.batchLimit} used.`);
+  } catch (err) {
+    fail(err.message, err.code === 'EAUTOBLOCKED' ? 9 : 1);
+  }
+}
+
+async function cmdAutoNext(args) {
+  const { values } = parseArgs({ args, options: { json: { type: 'boolean', default: false } } });
+  const policy = loadPolicy();
+  const eligible = eligibleForAuto(policy, readAttestation());
+  if (values.json) {
+    out(JSON.stringify(eligible, null, 2));
+    return;
+  }
+  if (!eligible.length) {
+    out('No queued applications. Run /hunt to build some.');
+    return;
+  }
+  for (const item of eligible) {
+    out(`${item.eligible ? 'READY  ' : 'BLOCKED'} ${item.appId}  [${item.score ?? '--'}]  ${item.company} — ${item.title}`);
+    if (!item.eligible) for (const b of item.blockers) out(`        · ${b}`);
+  }
+}
+
 async function cmdRecord(appId, status, args) {
   if (!appId || !status) fail('usage: jobagent record <appId> <status> [--note "..."] [--force]');
   const { values } = parseArgs({
@@ -320,6 +537,8 @@ try {
   switch (command) {
     case 'init': await cmdInit(); break;
     case 'doctor': await cmdDoctor(); break;
+    case 'upload': await cmdUpload(rest[0]); break;
+    case 'policy': await cmdPolicy(); break;
     case 'discover': await cmdDiscover(); break;
     case 'detect': await cmdDetect(rest[0]); break;
     case 'ingest': await cmdIngest(rest[0]); break;
@@ -329,6 +548,11 @@ try {
     case 'package': await cmdPackage(rest[0], rest.slice(1)); break;
     case 'approve': await cmdApprove(rest[0]); break;
     case 'disarm': await cmdDisarm(); break;
+    case 'auto-enable': await cmdAutoEnable(rest); break;
+    case 'auto-status': await cmdAutoStatus(rest); break;
+    case 'auto-revoke': await cmdAutoRevoke(); break;
+    case 'auto-arm': await cmdAutoArm(rest[0]); break;
+    case 'auto-next': await cmdAutoNext(rest); break;
     case 'record': await cmdRecord(rest[0], rest[1], rest.slice(2)); break;
     case 'status': await cmdStatus(rest); break;
     case 'help':

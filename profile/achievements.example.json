@@ -1,0 +1,51 @@
+{
+  "_readme": [
+    "Copy to profile/achievements.json (jobagent init does this) and make it yours.",
+    "This is your metrics & achievements bank — quantified wins, awards, projects,",
+    "and certifications that may not all fit on the resume. The fit-scorer uses it",
+    "as evidence when judging fit; the tailor agent pulls from it to strengthen",
+    "bullets and cover letters. Everything here MUST be true and defensible in an",
+    "interview — it is covered by the same no-fabrication rule as the resume.",
+    "Add as much as you can: concrete numbers beat adjectives every time."
+  ],
+  "achievements": [
+    {
+      "title": "Re-architected event ingestion pipeline",
+      "metric": "Cut p99 latency from 8s to 900ms while volume grew 3x to 40k events/s",
+      "context": "Acme Analytics platform team, led design and rollout across 6 services",
+      "tags": ["performance", "architecture", "typescript", "aws"],
+      "period": "2024"
+    },
+    {
+      "title": "Billing platform launch",
+      "metric": "Shipped billing service processing $30M ARR with zero revenue-impacting incidents in year one",
+      "context": "Widget Co, two-person team, Go + Kubernetes",
+      "tags": ["reliability", "go", "payments"],
+      "period": "2021"
+    },
+    {
+      "title": "Deploy pipeline overhaul",
+      "metric": "Reduced deploy time from ~4 hours to 12 minutes; deploy frequency went from weekly to daily",
+      "context": "Introduced Terraform + CI at Widget Co",
+      "tags": ["devops", "terraform", "ci"],
+      "period": "2020"
+    }
+  ],
+  "projects": [
+    {
+      "name": "opensource-widget",
+      "url": "https://github.com/jordan-example/opensource-widget",
+      "summary": "CLI tool for widget management; 1.2k GitHub stars, 40+ contributors",
+      "tech": ["typescript", "node"]
+    }
+  ],
+  "certifications": [
+    { "name": "AWS Solutions Architect – Associate", "issuer": "AWS", "year": 2023 }
+  ],
+  "awards": [
+    { "name": "Engineering Excellence Award", "issuer": "Acme Analytics", "year": 2024, "note": "For the ingestion re-architecture" }
+  ],
+  "talks_and_writing": [
+    { "title": "Scaling event pipelines on a budget", "venue": "DenverJS meetup", "year": 2025, "url": "" }
+  ]
+}

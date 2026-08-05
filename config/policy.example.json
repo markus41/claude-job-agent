@@ -26,7 +26,21 @@
   },
   "tailor": {
     "minScore": 65,
-    "topN": 5
+    "topN": 5,
+    "coverLetter": {
+      "maxWords": 300,
+      "tone": "professional"
+    }
+  },
+  "scoring": {
+    "weights": {
+      "mustHaveSkills": 35,
+      "titleSeniority": 20,
+      "locationWorkplace": 15,
+      "compensation": 10,
+      "domainIndustry": 10,
+      "trajectoryFlags": 10
+    }
   },
   "followUps": {
     "days": [7, 14]

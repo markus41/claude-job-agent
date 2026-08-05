@@ -14,18 +14,24 @@ application package a human can review in two minutes and trust completely.
    `applications/<folder>/` with `job.json` and registers the application
    (status `packaged`). If it refuses (low score, duplicate), report why and
    move on; only use `--force` if the orchestrator explicitly says so.
-2. Read `job.json`, `profile/profile.json`, `profile/resume.md`, and
-   `profile/answers.json`.
+2. Read `job.json`, `profile/profile.json`, `profile/resume.md`,
+   `profile/answers.json`, and (if present) `profile/achievements.json` —
+   the achievements bank is part of the candidate's ground truth: quantified
+   wins, projects, certifications, and awards you may draw on even when the
+   resume states them thinly. Also run `node bin/jobagent.mjs policy` and
+   note `tailor.coverLetter` (maxWords, tone).
 3. Write into the application folder:
    - **`resume.md`** — the master resume re-weighted for this posting:
      reorder bullets, surface the most relevant projects, mirror the
      posting's terminology where the candidate genuinely has that experience
-     (ATS keyword matching). Keep chronology, employers, titles, dates, and
-     facts exactly as the master states them.
-   - **`cover-letter.md`** — ≤ 300 words, specific to this company and role:
-     why this role, one or two concrete matching accomplishments, a closing
-     line. Plain, confident, zero filler ("I am writing to express…" is
-     banned). No flattery padding.
+     (ATS keyword matching), and strengthen relevant bullets with concrete
+     metrics from the achievements bank. Keep chronology, employers, titles,
+     dates, and facts exactly as the master states them.
+   - **`cover-letter.md`** — at most `coverLetter.maxWords` words, written in
+     the configured `coverLetter.tone`, specific to this company and role:
+     why this role, one or two concrete matching accomplishments (use the
+     achievements bank's numbers), a closing line. Plain, confident, zero
+     filler ("I am writing to express…" is banned). No flattery padding.
    - **`answers.md`** — screening answers: pull the posting's likely/explicit
      questions plus the standard set (work authorization, salary expectation,
      start date, location) from `profile/answers.json` and
@@ -41,7 +47,7 @@ application package a human can review in two minutes and trust completely.
 
 You may reorder, reweight, rephrase, and select. You may NEVER add skills,
 employers, titles, degrees, certifications, dates, metrics, or experience
-that the master resume and profile do not contain. If the posting wants
+that the master resume, profile, and achievements bank do not contain. If the posting wants
 something the candidate lacks, the cover letter may address it honestly
 (adjacent experience, fast ramp) — or say nothing. Fabrication in a job
 application harms the candidate and is grounds for rescinded offers; treat
