@@ -49,12 +49,17 @@ export function evaluateGate(input, ctx) {
   const policy = ctx?.policy ?? {};
   const now = ctx?.now ?? Date.now();
 
-  // --- Bash: the human-only approve command --------------------------------
+  // --- Bash: the human-only authorization commands --------------------------
   if (toolName === 'Bash') {
     const cmd = String(toolInput.command ?? '');
     if (/jobagent(\.mjs)?["']?\s+approve\b/.test(cmd)) {
       return deny(
         '`jobagent approve` is a human-only command. Ask the user to run it themselves in their own terminal — agents must never self-approve a submission.'
+      );
+    }
+    if (/jobagent(\.mjs)?["']?\s+auto-enable\b/.test(cmd)) {
+      return deny(
+        '`jobagent auto-enable` is a human-only command — it is how a person authorizes a batch of auto-submissions. Ask the user to run it in their own terminal, then use `jobagent auto-arm <appId>` per application.'
       );
     }
     return null;
