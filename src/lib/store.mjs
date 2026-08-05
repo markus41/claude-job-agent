@@ -4,7 +4,9 @@
 import { appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { paths } from './config.mjs';
+import { autoPreflight, readAttestation } from './auto.mjs';
 import { ensureDir, nowIso, readJson, sha1, slugify, truncate, writeJsonAtomic } from './util.mjs';
+import { writeTrackerFiles } from './workbook.mjs';
 
 // --- Jobs --------------------------------------------------------------------
 
@@ -111,6 +113,28 @@ export function loadApps() {
 
 export function saveApps(db) {
   writeJsonAtomic(paths().appsFile, db);
+  refreshTracker(db);
+}
+
+// Human-readable live view of the pipeline: data/applications.xlsx + .csv.
+// A view, never the ledger — if writing it fails, the state write still stands.
+export function refreshTracker(appsDb) {
+  try {
+    const db = appsDb ?? loadApps();
+    writeTrackerFiles(db.apps, loadJobs().jobs);
+    return true;
+  } catch (err) {
+    // Most common cause on Windows: applications.xlsx is open in Excel, which
+    // locks the file. The state write already succeeded; the view is stale
+    // until the next change after the file is closed.
+    appendAudit({
+      actor: 'cli',
+      event: 'tracker-write-failed',
+      error: err.message,
+      hint: 'close data/applications.xlsx if it is open, then make any state change to refresh it',
+    });
+    return false;
+  }
 }
 
 export function getApp(appId) {
@@ -184,6 +208,77 @@ export function recordStatus(appId, status, { note = '', force = false, followUp
   if (status === 'submitted') disarmSession({ quiet: true });
   appendAudit({ actor: 'cli', event: 'record', appId, status, note: truncate(note, 200) });
   return app;
+}
+
+// --- Auto-submit mode ----------------------------------------------------------
+
+// Written only by `jobagent auto-enable` (TTY-only, typed confirmation).
+export function saveAttestation(att) {
+  writeJsonAtomic(paths().autoAttestationFile, att);
+  appendAudit({
+    actor: 'human',
+    event: 'auto-enable',
+    batchLimit: att.batchLimit,
+    requireScore: att.requireScore,
+    expiresAt: att.expiresAt,
+  });
+  return att;
+}
+
+export function revokeAttestation() {
+  const p = paths().autoAttestationFile;
+  const existed = existsSync(p);
+  if (existed) rmSync(p);
+  appendAudit({ actor: 'cli', event: 'auto-revoke' });
+  return existed;
+}
+
+// Agents MAY call this (via `jobagent auto-arm`). It arms the browser gate for
+// one application only if autoPreflight() returns no blockers, and consumes
+// one unit of the human's attested batch.
+export function autoArm(appId, { policy, hasResumePdf }) {
+  const db = loadApps();
+  const app = db.apps[appId];
+  const job = app ? loadJobs().jobs[app.jobId] : null;
+  const attestation = readAttestation();
+
+  const blockers = autoPreflight({ app, job, policy, attestation, apps: db.apps, hasResumePdf });
+  if (blockers.length) {
+    appendAudit({ actor: 'agent', event: 'auto-arm-refused', appId, blockers });
+    const err = new Error(`auto-submit refused for ${appId}:\n  - ${blockers.join('\n  - ')}`);
+    err.code = 'EAUTOBLOCKED';
+    err.blockers = blockers;
+    throw err;
+  }
+
+  app.status = 'approved';
+  app.history.push({
+    status: 'approved',
+    at: nowIso(),
+    note: `auto-approval under batch attested ${attestation.attestedAt} (${(attestation.used ?? 0) + 1}/${attestation.batchLimit})`,
+  });
+  saveApps(db);
+
+  const updated = {
+    ...attestation,
+    used: (attestation.used ?? 0) + 1,
+    submittedAppIds: [...(attestation.submittedAppIds ?? []), appId],
+  };
+  delete updated.expired;
+  delete updated.exhausted;
+  delete updated.remaining;
+  writeJsonAtomic(paths().autoAttestationFile, updated);
+
+  const session = armSession(app, { ttlMinutes: policy?.approval?.sessionTtlMinutes ?? 60 });
+  appendAudit({
+    actor: 'agent',
+    event: 'auto-arm',
+    appId,
+    used: updated.used,
+    batchLimit: updated.batchLimit,
+    expiresAt: session.expiresAt,
+  });
+  return { app, session, attestation: updated };
 }
 
 // Called by `jobagent approve` only (which enforces the interactive-terminal check).

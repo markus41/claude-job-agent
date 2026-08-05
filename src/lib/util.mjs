@@ -1,6 +1,6 @@
 // Small shared utilities. No dependencies, no side effects beyond the fs helpers.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const nowIso = () => new Date().toISOString();
@@ -68,11 +68,41 @@ export function readJson(path, fallback) {
   }
 }
 
+// Block the current thread briefly without pulling in timers — used only for
+// the rename retry below, where a few milliseconds beats losing a state write.
+function sleepSyncMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+const TRANSIENT_RENAME_ERRORS = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
 export function writeJsonAtomic(path, obj) {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(obj, null, 2)}\n`);
-  renameSync(tmp, path);
+  const data = `${JSON.stringify(obj, null, 2)}\n`;
+  writeFileSync(tmp, data);
+
+  // On Windows, replacing an existing file can transiently fail with EPERM
+  // when a virus scanner or the search indexer momentarily holds the
+  // destination handle. Retry, then fall back to an in-place write: a state
+  // change must never be silently lost because of a scanner race.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      renameSync(tmp, path);
+      return;
+    } catch (err) {
+      if (attempt >= 9 || !TRANSIENT_RENAME_ERRORS.has(err.code)) {
+        writeFileSync(path, data);
+        try {
+          rmSync(tmp, { force: true });
+        } catch {
+          // A leftover .tmp is harmless; the real content is already written.
+        }
+        return;
+      }
+      sleepSyncMs(5 * (attempt + 1));
+    }
+  }
 }
 
 export function ensureDir(path) {
