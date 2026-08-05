@@ -2,6 +2,13 @@
 
 End-to-end setup on macOS, Linux, or Windows.
 
+> **Fastest path:** the one-click bootstrap (`setup.ps1` / `setup.sh` /
+> double-click `setup.cmd`) does steps 1–3 for you and launches Claude Code —
+> see the [README](../README.md#setup-one-time-20-minutes). Then run `/setup`
+> inside Claude Code and it fills in every file below through a guided
+> interview (resume import included). The rest of this page is the manual
+> route and the reference detail.
+
 ## 1. Prerequisites
 
 - **Node.js 22+** — `node -v`
@@ -36,8 +43,10 @@ This copies the committed examples into live files that are **gitignored**
 | `profile/resume.md` | Your **master resume**. Every tailored variant is derived from this file and may not contain anything it doesn't. |
 | `profile/resume.pdf` | *(create manually)* A current PDF export of your resume for form uploads. Export from Word/Google Docs, or `pandoc resume.md -o resume.pdf`. |
 | `profile/answers.json` | Your screening Q&A bank — consistent answers to the questions every form asks. |
+| `profile/achievements.json` | Your metrics & achievements bank: quantified wins, projects, certifications, awards. The scorer uses it as evidence; the tailor uses it to strengthen bullets. Same truth-only rule as the resume. |
+| `profile/uploads/` | Drop zone for source documents. Add your existing resume with `node bin/jobagent.mjs upload <path>` — `/setup` builds your profile from it, and `/apply` can upload the newest PDF from here as a fallback. |
 | `config/companies.json` | Target companies. For each: `{ "company", "ats", "slug" }`. |
-| `config/policy.json` | Allowlist, caps, approval TTL, tailoring thresholds. Defaults are sane. |
+| `config/policy.json` | Allowlist, caps, approval TTL, tailoring thresholds, cover-letter tone/length, scoring weights. Defaults are sane; see [CONFIGURATION.md](CONFIGURATION.md) for every knob and `node bin/jobagent.mjs policy` for the effective values. |
 
 **Finding a company's ATS slug:** open their careers page, copy the URL of
 any job posting, and run:
@@ -79,6 +88,8 @@ claude
 Inside Claude Code:
 
 ```
+/setup       # first time: guided interview — imports your resume, builds
+             # profile/achievements/answers/companies/policy for you
 /doctor      # environment + config check — fix anything it flags
 /hunt        # discover → shortlist → score → tailor top matches
 ```
@@ -110,6 +121,20 @@ claude -p "/hunt" --max-turns 40
 
 Wire that into cron (macOS/Linux) or Windows Task Scheduler daily. Keep
 `/apply` interactive — that's the half you want your eyes on anyway.
+
+## Optional: the companion plugin
+
+If you (or the person helping you) want install/help commands available from
+*any* folder:
+
+```bash
+claude plugin marketplace add markus41/claude-job-agent
+claude plugin install job-agent@claude-job-agent
+```
+
+That adds `/job-agent:install` (guided install from anywhere) and
+`/job-agent:help`. The pipeline itself stays project-scoped in this folder —
+that's where its safety hooks live (see `plugins/job-agent/README.md`).
 
 ## Windows notes
 

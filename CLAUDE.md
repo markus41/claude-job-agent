@@ -6,12 +6,19 @@ if you forget them.
 
 ## Golden rules
 
-1. **Never run `node bin/jobagent.mjs approve`.** It is the human approval
-   gate. The submit-gate hook denies it, the CLI refuses non-TTY callers, and
-   asking the user to run it is the correct behavior — do that instead.
+1. **Never run `node bin/jobagent.mjs approve` or `auto-enable`.** They are
+   the human authorization gates (per-application and per-batch). The
+   submit-gate hook denies both, the CLI refuses non-TTY callers, and asking
+   the user to run it themselves is the correct behavior — do that instead.
+   You MAY run `auto-arm <appId>` — it consumes the human's existing batch
+   authorization and refuses on any preflight blocker. A refusal is final:
+   report the blockers, never route around them.
 2. **Never fabricate candidate facts.** Resumes, cover letters, and answers
-   may only reorder/reweight/rephrase what `profile/` already contains.
-   Unanswerable screening questions get `NEEDS HUMAN INPUT`, not a guess.
+   may only reorder/reweight/rephrase what `profile/` already contains
+   (`resume.md`, `profile.json`, and the `achievements.json` metrics bank
+   are the complete ground truth). Unanswerable screening questions get
+   `NEEDS HUMAN INPUT`, not a guess. The `/setup` interview writes these
+   files FROM the user's own words and documents — same rule applies.
 3. **Never touch CAPTCHAs or bot-checks.** Pause, tell the human to complete
    it in the visible browser window, wait.
 4. **Never enter passwords, SSNs, DOBs, government IDs, or payment data**
@@ -30,14 +37,28 @@ if you forget them.
 ## What runs where
 
 - Deterministic work (polling, filtering, state) = `node bin/jobagent.mjs …`
-  — never reimplement it inline.
+  — never reimplement it inline. (`upload` copies source docs into
+  `profile/uploads/`; `policy` prints the effective merged config — use it
+  instead of re-deriving defaults.)
 - Judgment work = the subagents: `job-discovery`, `fit-scorer`, `tailor`,
-  `browser-apply`, `application-logger`. Slash commands
-  (`/hunt /discover /score /tailor /apply /status /follow-up /doctor`)
-  orchestrate them; prefer the commands.
-- State machine: packaged → tailored → queued → **approved (human-only)** →
-  submitted → confirmed/interview/offer, with blocked/withdrawn/rejected/
-  closed exits. Transitions go through `jobagent record` (validated).
+  `browser-apply`, `application-logger`. Slash commands (`/setup /hunt
+  /discover /score /tailor /apply /auto-apply /status /follow-up /doctor`)
+  orchestrate them; prefer the commands. `/setup` is the in-depth onboarding
+  interview and runs in the MAIN thread (it converses with the user); a
+  SessionStart hook (`first-run.mjs`) offers it on an unconfigured workspace.
+- The `plugins/job-agent` companion plugin (+ root `.claude-plugin/`
+  marketplace) is install/help only — never move pipeline logic or hooks
+  into it; they must stay project-scoped with the data.
+- State machine: packaged → tailored → queued → **approved (human-authorized:
+  `approve`, or `auto-arm` inside an attested batch)** → submitted →
+  confirmed/interview/offer, with blocked/withdrawn/rejected/closed exits.
+  Transitions go through `jobagent record` (validated).
+- Unattended (`/auto-apply`) runs must treat every would-be human pause as a
+  stop: record `blocked`, disarm, move on. Never guess a form value, never
+  touch a CAPTCHA or login, in any mode.
+- `data/applications.xlsx` + `.csv` are auto-refreshed views of the app log.
+  Never hand-edit them and never treat them as the source of truth
+  (`data/applications.json` is); regenerate by making a real state change.
 
 ## Data contracts (validated by the CLI — fix rejects, don't bypass)
 

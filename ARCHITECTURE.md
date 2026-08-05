@@ -22,13 +22,14 @@ Two principles drive every decision here:
 
 | Blueprint layer | As built | Model | Tools |
 |---|---|---|---|
-| Orchestration | Claude Code main thread + 8 slash commands (`.claude/commands/`) | user's choice | Bash (CLI), Agent |
+| Orchestration | Claude Code main thread + 9 slash commands (`.claude/commands/`) | user's choice | Bash (CLI), Agent |
+| Onboarding | `/setup` guided interview (main thread — it must converse with the user, so it is a command, not a subagent) + `jobagent upload`/`init` | user's choice | Read/Write/Bash |
 | Sourcing | `jobagent discover` (deterministic) + `job-discovery` agent for unknown-ATS targets | sonnet | network read, CLI ingest |
 | Matching | `jobagent shortlist` (hard filters, code) + `fit-scorer` agent (rubric) | sonnet | Read/Bash/Write, **no network** |
 | Tailoring | `tailor` agent → per-application folder | sonnet | Read/Write/Edit/Bash, **no network** |
 | Submission (API) | `src/submit/api.mjs` — extension point, **disabled by default** (see below) | — | — |
 | Submission (browser) | `browser-apply` agent via Playwright MCP, gated by hook + armed session | sonnet | browser, CLI record |
-| Tracking | `store.mjs` state machine + `application-logger` agent + `data/audit.log` | haiku | Read/Bash/Write |
+| Tracking | `store.mjs` state machine + `application-logger` agent + `data/audit.log` + live `applications.xlsx`/`.csv` (`workbook.mjs`) | haiku | Read/Bash/Write |
 
 ## Data flow & stores
 
@@ -74,6 +75,27 @@ compensation summaries) and falls back to a conservative text extractor
 (`src/lib/comp.mjs`) that would rather return `null` than misread a signing
 bonus as a salary.
 
+### Candidate ground truth (the personalization layer)
+
+Four gitignored files under `profile/` define the candidate; agents treat
+them as the *only* source of truth about the person:
+
+- `profile.json` — identity, targets, skills, screening defaults (drives the
+  hard filters and the scorer).
+- `resume.md` — master resume; every tailored variant derives from it.
+- `achievements.json` — metrics & achievements bank (quantified wins,
+  projects, certifications, awards): extra evidence for scoring and stronger
+  tailored bullets, covered by the same no-fabrication rule.
+- `answers.json` — screening Q&A bank for consistent form answers.
+
+`profile/uploads/` is the intake drop zone (`jobagent upload <file>`): the
+`/setup` interview transcribes an uploaded resume into `resume.md`, and the
+browser agent falls back to the newest uploaded PDF when no exported
+`resume.pdf` exists. Behavior knobs (caps, cover-letter tone/length, scoring
+weights) live in `config/policy.json`, deep-merged over `DEFAULT_POLICY` and
+inspectable via `jobagent policy` — the full surface is documented in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
 ### Application state machine
 
 ```mermaid
@@ -103,6 +125,41 @@ Transitions are validated in `store.mjs` (`TRANSITIONS`); `--force` exists
 for corrections but is logged. `approved` is unreachable through
 `jobagent record` — only `jobagent approve` sets it, and that command
 requires an interactive TTY and a typed confirmation.
+
+### The live tracker
+
+`src/lib/workbook.mjs` regenerates `data/applications.xlsx` and
+`data/applications.csv` on every application write (`saveApps` →
+`refreshTracker`). The `.xlsx` is a hand-built, valid SpreadsheetML package —
+a STORED-method zip with a CRC32 implementation and inline-string cells, no
+dependencies — verified in tests by parsing the zip through its central
+directory, and confirmed to open in Excel with all cells intact. It is a
+*view*: a failed write is logged to the audit trail and never blocks the
+state change, and `data/applications.json` stays the ledger.
+
+## Authorization models
+
+| | Manual (default) | Auto (opt-in) |
+|---|---|---|
+| Human act | `jobagent approve <appId>` per application | `jobagent auto-enable --batch N` once per batch |
+| Ceremony | TTY + type the app id | TTY + type `authorize N`, after a preview of what would go out and why anything queued is ineligible |
+| Who arms the gate | only that command | `jobagent auto-arm <appId>` (agent-callable) inside the attestation |
+| Scope | one application | N applications, expiring by count and by clock (`ttlHours`) |
+| Per-application checks | human judgment | `autoPreflight()` — 10 mechanical blockers |
+
+The key property: **auto mode changes who may arm a session, not what the
+gate checks.** `src/lib/gate.mjs` is untouched by it — browser tools still
+require an armed session, the host allowlist and aggregator denylist still
+apply, credential-shaped input and out-of-tree uploads are still blocked. The
+attestation lives at `data/state/auto-approval.json` and carries its own
+score floor, so a human can authorize a stricter batch than policy allows but
+never a looser one (`Math.max` of the two floors wins).
+
+`autoPreflight()` refuses on: mode not `auto`; missing/expired/exhausted
+attestation; application not `queued`; missing or sub-floor fit score;
+incomplete package; `NEEDS HUMAN INPUT` present; no resume PDF; daily cap;
+per-company/day cap; denylisted apply host. Every refusal is audited with its
+blocker list.
 
 ## Sourcing: why public ATS APIs first
 
@@ -138,7 +195,8 @@ mechanisms, at least one of which is code:
 
 | Rule | Agent prompt | Code enforcement |
 |---|---|---|
-| Human approves every submission | all agents | `approve` requires TTY + typed confirmation; hook denies agents running it; browser locked without armed session |
+| A human authorizes every submission | all agents | `approve` and `auto-enable` both require TTY + typed confirmation; hook denies agents running either; browser locked without an armed session |
+| Unattended runs stay in-mandate | `/auto-apply`, browser-apply | `autoPreflight()` 10 blockers per application; batch expires by count and clock; `auto-revoke` kills it instantly |
 | One application per approval | browser-apply | session file scoped to one appId, TTL-limited, disarmed on submit |
 | Stay on legitimate hosts | browser-apply | hook allowlist (policy + session host); unparseable URLs denied |
 | No aggregators | job-discovery, browser-apply | hook denylist (`*.linkedin.com`, `*.indeed.com`, …) |
@@ -169,12 +227,29 @@ invocation layer (`claude -p "/hunt" --max-turns N`) — see docs/SETUP.md.
 
 | Blueprint | As built | Why |
 |---|---|---|
-| SQLite/Postgres tracking | JSON stores + state machine | right-sized; zero deps; human-diffable |
+| SQLite/Postgres tracking | JSON stores + state machine, plus a live xlsx/csv view | right-sized; zero deps; human-diffable; the spreadsheet is what people actually want to read |
+| Human-in-the-loop on every high-stakes action | two authorization models: per-application (default) and attested batch (opt-in) | reviewing each package is the right default, but batch consent is a legitimate informed choice once trust is established — and it keeps every mechanical guardrail |
 | Direct API submission for some ATS | disabled-by-default extension point | public APIs are read-only; no verified applicant-side submit contract to ship |
 | LinkedIn Easy Apply / Indeed as browser targets | excluded + denylisted | ToS + bot detection; company boards carry the same jobs |
 | Claude Computer Use fallback for weird forms | Playwright MCP only (v1) | one battle-tested browser path first; the takeover-by-human pattern covers the hard cases |
 | Cloudflare Workers for scheduling | local scheduling (`claude -p` + cron/Task Scheduler) | keep v1 self-contained; nothing precludes moving polling to a Worker later |
 | `SubagentStop` output gating | CLI-side validation (`import-scores`, `ingest` are all-or-nothing) | validation at the data boundary is stronger than transcript inspection |
+
+## Distribution: project vs. plugin
+
+The repo ships two ways, deliberately asymmetric:
+
+- **The workspace (this repo, cloned)** carries everything: CLI, agents,
+  commands, and — critically — the `PreToolUse` submit gate. Hooks are
+  project-scoped by design so the enforcement layer is guaranteed active
+  exactly where the candidate data and browser sessions live. One-click
+  bootstrap scripts (`setup.ps1` / `setup.cmd` / `setup.sh`) stand up a
+  workspace from nothing, installing prerequisites only with consent.
+- **The companion plugin** (`plugins/job-agent`, served from the repo's own
+  marketplace via `.claude-plugin/marketplace.json`) adds only
+  `/job-agent:install` and `/job-agent:help` globally. It contains no
+  pipeline logic and no hooks — it exists to get people *to* the workspace,
+  not to run the pipeline outside the gate's reach.
 
 ## Extension points
 

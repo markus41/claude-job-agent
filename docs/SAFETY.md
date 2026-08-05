@@ -8,12 +8,15 @@ why, and how each rule is enforced.
 ## Principles
 
 1. **Human accountability.** A job application is a representation to another
-   human being. Every submission requires a fresh, per-application approval
-   from a person at a real terminal. There is no auto-approve configuration.
+   human being. Every submission is authorized by a person at a real
+   terminal — either per application (`approve`, the default) or as an
+   explicit batch (`auto-enable`, opt-in). No submission ever happens without
+   one of those two human acts. See [Auto-submit mode](#auto-submit-mode).
 2. **Truthfulness.** Tailoring optimizes presentation of true facts. The
-   system may never invent skills, titles, dates, degrees, or experience.
-   Lying on applications hurts the candidate (rescinded offers, terminations)
-   and everyone else in the pile.
+   candidate's ground truth is `profile/` — resume, profile, and the
+   achievements/metrics bank — and the system may never add skills, titles,
+   dates, degrees, or experience beyond it. Lying on applications hurts the
+   candidate (rescinded offers, terminations) and everyone else in the pile.
 3. **Least privilege.** Each subagent gets the minimum tool surface: the
    scorer and tailor have no network; the discovery agent has no browser;
    the browser agent acts only inside an armed, time-boxed, host-fenced
@@ -39,7 +42,8 @@ The system will not, under any configuration:
   terms of service prohibit it. Company career pages carry the same jobs.
 - **Fabricate qualifications** or answer screening questions it has no
   truthful answer for.
-- Submit **without human approval**, or approve on the human's behalf.
+- Submit **without human authorization**, or authorize on the human's behalf
+  (neither `approve` nor `auto-enable` can be run by an agent).
 
 If you want a tool that does those things, this isn't it, and we'd gently
 suggest the problem is the plan rather than the tooling.
@@ -51,7 +55,8 @@ code-level backstop:
 
 | Rule | Mechanisms |
 |---|---|
-| Human approval per submission | `jobagent approve` requires an interactive TTY + typed app-id confirmation; the PreToolUse hook denies any agent Bash call containing `jobagent approve`; browser tools are denied entirely unless an approval armed `data/state/apply-session.json` (TTL-boxed, single application) |
+| Human authorization per submission | `jobagent approve` requires an interactive TTY + typed app-id confirmation; the PreToolUse hook denies any agent Bash call containing `jobagent approve` **or** `jobagent auto-enable`; browser tools are denied entirely unless an authorization armed `data/state/apply-session.json` (TTL-boxed, single application) |
+| Unattended runs stay inside the human's mandate | `autoPreflight()` re-checks 10 conditions per application and refuses on any of them; each auto-arm consumes one unit of the attested batch, which expires by clock and by count |
 | Host fencing | hook checks every `browser_navigate` URL against `allowlist.hosts` + the approved application's own host; unparseable URLs denied |
 | Aggregator exclusion | hook denylist (`*.linkedin.com`, `*.indeed.com`, `*.glassdoor.com`, `*.ziprecruiter.com`, `*.monster.com`) — checked before the allowlist |
 | Sensitive input | hook blocks SSN-shaped and card-shaped values per form field |
@@ -63,6 +68,48 @@ code-level backstop:
 
 The gate logic is pure, dependency-free, and unit-tested
 (`src/lib/gate.mjs`, `tests/gate.test.mjs`).
+
+## Auto-submit mode
+
+Off by default; enabling it takes two deliberate human acts (a policy edit
+plus a TTY-only `auto-enable` ceremony with a typed confirmation). It exists
+because reviewing every package one at a time is genuinely slow once you
+trust the output — so it moves your consent earlier, to a batch, instead of
+removing it.
+
+**What changes.** Who may arm the browser gate. In manual mode only
+`approve` can; in auto mode the agent may call `auto-arm <appId>`, which arms
+a session *only if* every preflight condition passes and there is batch
+capacity left. Each arm burns one unit; the authorization also expires by
+clock (`ttlHours`).
+
+**What does not change — any mode, any config:**
+
+- The PreToolUse gate still governs every browser call: host allowlist,
+  aggregator denylist, upload containment, SSN/card blocking, armed-session
+  requirement.
+- CAPTCHAs and bot-checks are never solved or bypassed. Unattended, hitting
+  one records the application `blocked` and moves on.
+- Logins, account creation, credentials, government IDs, payment data:
+  never entered. Unattended, they end that application as `blocked`.
+- `NEEDS HUMAN INPUT` in a package blocks that submission outright — the
+  agent will not invent an answer to get past it.
+- The no-fabrication rule on all written materials.
+- The audit trail: `auto-enable`, every `auto-arm`, every refusal (with its
+  blocker list), and every browser action land in `data/audit.log`.
+
+**Volume, honestly.** The machinery could submit far faster than any human
+can read, and that is the main way it could hurt the person using it:
+recruiters and ATS platforms flag bulk submissions, and unread applications
+are worse applications. The defaults (score floor 80, one application per
+company per day, 10 per day overall, 12-hour authorization) are tuned for a
+serious search rather than a spray, and `auto-status` always shows exactly
+what is queued and what is blocked. Raise the caps knowingly, and keep
+reading a sample of what goes out.
+
+**Kill switch.** `node bin/jobagent.mjs auto-revoke` cancels the batch and
+disarms the browser immediately; `disarm` alone locks the browser without
+touching the batch.
 
 ## Prompt injection
 
@@ -90,16 +137,22 @@ Job postings and web pages are untrusted input that the model reads at scale
 ## Incident response
 
 Something looks wrong (agent acting oddly, unexpected navigation attempt,
-suspicious posting content):
+suspicious posting content, an auto run doing more than you meant):
 
-1. `node bin/jobagent.mjs disarm` — instantly locks all browser tools.
-2. Check `data/audit.log` — every browser action and state change is there.
-3. Check the application folder for exactly what was written/submitted.
+1. `node bin/jobagent.mjs auto-revoke` — cancels any batch authorization AND
+   disarms the browser. (`disarm` alone locks the browser but leaves the
+   batch intact.)
+2. Check `data/audit.log` — every browser action, state change, arm, and
+   refusal is there.
+3. Check `data/applications.xlsx` for the readable picture of what went out,
+   and the application folders for exactly what was submitted.
 4. File an issue (with the injected/suspicious content if applicable).
 
 ## Your responsibilities
 
 - Review every package before approving — the words go out under your name.
+  In auto mode, read a real sample regularly; you authorized the batch, so
+  its contents are yours.
 - Keep your profile and master resume truthful; the system amplifies
   whatever you put there.
 - Respect per-site terms for anything you add to the allowlist.
