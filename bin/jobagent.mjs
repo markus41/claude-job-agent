@@ -11,14 +11,14 @@ import { loadCompanies, loadPolicy, loadProfile, paths, profileFilesPresent } fr
 import { detectAts, normalizeManual } from '../src/lib/normalize.mjs';
 import {
   approveApplication, autoArm, createApplication, disarmSession, getApp, getJob,
-  importScores, loadApps, recordStatus, revokeAttestation, saveAttestation, upsertJobs, recoverAuthorization,
+  importScores, loadApps, recordStatus, revokeAttestation, saveAttestation, upsertJobs, recoverAuthorization, recordFollowUp,
 } from '../src/lib/store.mjs';
 import { ensureDir, readJson } from '../src/lib/util.mjs';
 import { discover } from '../src/pipeline/discover.mjs';
 import { buildStatus, renderStatus } from '../src/pipeline/report.mjs';
 import { shortlist } from '../src/pipeline/shortlist.mjs';
 import { selectForTailoring } from '../src/pipeline/select.mjs';
-import { inspectWorkspace, resolveResume } from '../src/lib/workspace.mjs';
+import { inspectWorkspace, inspectPackage, resolveResume } from '../src/lib/workspace.mjs';
 
 const USAGE = `jobagent — job-application pipeline CLI
 
@@ -61,6 +61,9 @@ Auto-submit mode (batch authorization — see docs/SAFETY.md)
 
 Tracking
   status [--json]             Pipeline snapshot: jobs, applications, session, follow-ups
+  follow-up-draft <appId> <dueAt>             Record a draft using the scheduled filename
+  follow-up-complete <appId> <dueAt> --confirmed [--note "..."]
+                              Record a human-reported completion (never sends anything)
 `;
 
 function out(s) { process.stdout.write(`${s}\n`); }
@@ -82,13 +85,14 @@ async function cmdInit() {
   const p = paths();
   ensureBaseDirs();
   ensureDir(p.uploadsDir);
+  ensureDir(p.configDir);
   const pairs = [
-    [join(p.configDir, 'companies.example.json'), p.companiesFile],
-    [join(p.configDir, 'policy.example.json'), p.policyFile],
-    [join(p.profileDir, 'profile.example.json'), p.profileFile],
-    [join(p.profileDir, 'resume.example.md'), p.resumeFile],
-    [join(p.profileDir, 'answers.example.json'), p.answersFile],
-    [join(p.profileDir, 'achievements.example.json'), p.achievementsFile],
+    [join(p.projectRoot, 'config', 'companies.example.json'), p.companiesFile],
+    [join(p.projectRoot, 'config', 'policy.example.json'), p.policyFile],
+    [join(p.projectRoot, 'profile', 'profile.example.json'), p.profileFile],
+    [join(p.projectRoot, 'profile', 'resume.example.md'), p.resumeFile],
+    [join(p.projectRoot, 'profile', 'answers.example.json'), p.answersFile],
+    [join(p.projectRoot, 'profile', 'achievements.example.json'), p.achievementsFile],
   ];
   for (const [src, dest] of pairs) {
     if (existsSync(dest)) {
@@ -143,15 +147,15 @@ async function cmdDoctor() {
     check(false, 'config/policy.json valid', err.message);
   }
 
-  const gitignore = existsSync(join(p.root, '.gitignore'))
-    ? readFileSync(join(p.root, '.gitignore'), 'utf8')
+  const gitignore = existsSync(join(p.projectRoot, '.gitignore'))
+    ? readFileSync(join(p.projectRoot, '.gitignore'), 'utf8')
     : '';
   check(/^profile\/\*/m.test(gitignore) && /^applications\//m.test(gitignore) && /^data\//m.test(gitignore),
     '.gitignore protects profile/, applications/, data/',
     'restore the privacy rules in .gitignore before committing anything');
 
-  check(existsSync(join(p.root, '.claude', 'hooks', 'submit-gate.mjs')), 'submit gate hook present');
-  check(existsSync(join(p.root, '.mcp.json')), '.mcp.json present (Playwright MCP config)');
+  check(existsSync(join(p.projectRoot, '.claude', 'hooks', 'submit-gate.mjs')), 'submit gate hook present');
+  check(existsSync(join(p.projectRoot, '.mcp.json')), '.mcp.json present (Playwright MCP config)');
 
   // Informational (never fail the doctor): personalization extras.
   const info = (present2, label, hint) =>
@@ -538,7 +542,22 @@ function cmdSelect(args) {
   out(values.json ? JSON.stringify(result, null, 2) : result.items.map((j) => `${j.id}  [${j.score.value}]  ${j.company} — ${j.title}`).join('\n'));
 }
 
-function cmdWorkspace() { out(JSON.stringify(inspectWorkspace(), null, 2)); }
+function cmdWorkspace(args) {
+  const { values } = parseArgs({ args, options: { app: { type: 'string' }, json: { type: 'boolean' } } });
+  const state = inspectWorkspace();
+  if (values.app) {
+    const app = getApp(values.app);
+    if (!app) throw new Error('Unknown application id: ' + values.app);
+    state.package = inspectPackage(app);
+  }
+  out(JSON.stringify(state, null, 2));
+}
+
+function cmdFollowUp(appId, dueAt, args, complete) {
+  const { values } = parseArgs({ args, options: { confirmed: { type: 'boolean', default: false }, note: { type: 'string', default: '' } } });
+  const app = recordFollowUp(appId, dueAt, { complete, confirmed: values.confirmed, note: values.note });
+  out(JSON.stringify({ appId: app.id, followUps: app.followUps }));
+}
 
 const [, , command, ...rest] = process.argv;
 
@@ -546,7 +565,9 @@ try {
   switch (command) {
     case 'init': await cmdInit(); break;
     case 'doctor': await cmdDoctor(); break;
-    case 'workspace': cmdWorkspace(); break;
+    case 'workspace': cmdWorkspace(rest); break;
+    case 'follow-up-draft': cmdFollowUp(rest[0], rest[1], rest.slice(2), false); break;
+    case 'follow-up-complete': cmdFollowUp(rest[0], rest[1], rest.slice(2), true); break;
     case 'select': cmdSelect(rest); break;
     case 'upload': await cmdUpload(rest[0]); break;
     case 'policy': await cmdPolicy(); break;

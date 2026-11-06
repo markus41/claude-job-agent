@@ -51,6 +51,8 @@ function uploadDecision(input, ctx) {
   if (!ctx.repoRoot) return deny('Upload blocked: repo root unknown to the gate.');
   const canonical = ctx.resolvePath ?? resolve;
   const roots = ['applications', 'profile'].map((p) => canonical(resolve(ctx.repoRoot, p)));
+  const physicalRepo = canonical(resolve(ctx.repoRoot));
+  if (roots.some((root) => !root.startsWith(physicalRepo + sep))) return deny('Upload roots leave the workspace');
   const files = input.paths ?? (input.path ? [input.path] : []);
   if (!Array.isArray(files)) return deny('Upload paths must be an array');
   for (const file of files) {

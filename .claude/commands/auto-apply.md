@@ -6,6 +6,12 @@ argument-hint: [max-count]
 Auto-submit state:
 !`node bin/jobagent.mjs auto-status --json`
 
+Before selecting work, run `node bin/jobagent.mjs recover`, then refresh
+`auto-status --json`. Recovery only revokes stale permission and requeues
+interrupted approvals; it never authorizes anything or refunds batch slots.
+Refresh `auto-next --json` after every outcome; never reuse an old eligible
+list after a submission changes a cap.
+
 Work through the batch. Limit: the first argument if given ("$1"), otherwise
 whatever the batch authorization still allows.
 

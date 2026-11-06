@@ -2,7 +2,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadCompanies, loadPolicy, loadProfile, paths } from './config.mjs';
-import { applicationPath } from './package-paths.mjs';
+import { applicationPath, containedWorkspaceFile } from './package-paths.mjs';
 
 function isFile(path) { return existsSync(path) && statSync(path).isFile(); }
 
@@ -10,12 +10,13 @@ export function resolveResume(app) {
   const p = paths();
   const candidates = [app?.dir ? join(applicationPath(app.dir), 'resume.pdf') : null, p.resumePdfFile];
   const preferred = candidates.find((file) => file && isFile(file));
-  if (preferred) return preferred;
+  if (preferred) return containedWorkspaceFile(preferred);
   if (!existsSync(p.uploadsDir)) return null;
-  return readdirSync(p.uploadsDir)
+  const uploaded = readdirSync(p.uploadsDir)
     .filter((f) => /\.pdf$/i.test(f))
     .map((f) => join(p.uploadsDir, f)).filter(isFile)
     .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs || a.localeCompare(b))[0] ?? null;
+  return uploaded ? containedWorkspaceFile(uploaded) : null;
 }
 
 export function inspectPackage(app) {

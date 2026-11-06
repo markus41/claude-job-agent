@@ -1,7 +1,7 @@
 // JSON-file state store: jobs, applications, the armed apply-session, and the
 // audit log. Volumes here are hundreds of records, so plain JSON with atomic
 // writes beats dragging in a database. Swap this module out if you outgrow it.
-import { appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { paths } from './config.mjs';
 import { autoPreflight, readAttestation } from './auto.mjs';
@@ -10,6 +10,7 @@ import { writeTrackerFiles } from './workbook.mjs';
 import { assertCanonicalJob } from './intake.mjs';
 import { applicationPath } from './package-paths.mjs';
 import { stateMutation } from './state-mutation.mjs';
+import { followUpDraftName, updateFollowUp } from './follow-ups.mjs';
 import { authorizationJournal, assertNoActiveSession, commitAuthorization, prepareSession, rawSession, recoverState } from './authorization.mjs';
 
 // --- Jobs --------------------------------------------------------------------
@@ -211,7 +212,7 @@ export const recordStatus = stateMutation(function recordStatus(appId, status, {
     });
   }
   saveApps(db);
-  if (status === 'submitted') disarmSession({ quiet: true });
+  if (status !== 'approved' && rawSession()?.appId === appId) disarmSession({ quiet: true });
   appendAudit({ actor: 'cli', event: 'record', appId, status, note: truncate(note, 200) });
   return app;
 });
@@ -346,6 +347,21 @@ export const recoverAuthorization = stateMutation(function recoverAuthorization(
     const session = readSession();
     return session && !session.expired;
   } });
+});
+
+export const recordFollowUp = stateMutation(function recordFollowUp(appId, dueAt, options = {}) {
+  const db = loadApps();
+  const app = db.apps[appId];
+  if (!app) throw new Error('Unknown application id: ' + appId);
+  if (!options.complete) {
+    const draft = join(applicationPath(app.dir), followUpDraftName(dueAt));
+    if (!existsSync(draft) || !statSync(draft).isFile()) throw new Error('Write the follow-up draft before recording it');
+  }
+  if (updateFollowUp(app, dueAt, options)) {
+    saveApps(db);
+    appendAudit({ actor: options.complete ? 'human' : 'agent', event: options.complete ? 'follow-up-complete' : 'follow-up-draft', appId, dueAt });
+  }
+  return app;
 });
 
 // --- Counters & audit ----------------------------------------------------------

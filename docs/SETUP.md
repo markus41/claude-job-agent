@@ -66,7 +66,7 @@ job-discovery agent will chase it via Firecrawl.
 time you open the project — approve it. Manual alternative:
 
 ```bash
-claude mcp add playwright -- npx @playwright/mcp@latest
+claude mcp add playwright -- npx @playwright/mcp@0.0.84
 ```
 
 The browser must run **headed** (a visible window) so you can take over for

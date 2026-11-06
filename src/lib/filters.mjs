@@ -25,6 +25,19 @@ export function buildAppsIndex(apps) {
   return index;
 }
 
+function compensationReason(job, floor) {
+  if (!floor || !job.comp) return null;
+  const annual = annualize(job.comp);
+  const top = annual?.max ?? annual?.min;
+  return top != null && top < floor ? `comp-below-floor:${top}<${floor}` : null;
+}
+
+function staleReason(job, maxAgeDays) {
+  if (!job.postedAt) return null;
+  const age = (Date.now() - new Date(job.postedAt).getTime()) / DAY_MS;
+  return Number.isFinite(age) && age > maxAgeDays ? `stale:${Math.round(age)}d` : null;
+}
+
 export function hardFilter(job, profile, appsIndex, policy) {
   const reasons = [];
   const targets = profile.targets ?? {};
@@ -47,12 +60,8 @@ export function hardFilter(job, profile, appsIndex, policy) {
   }
 
   // 4. Compensation floor — only when the posting states comp.
-  const floor = targets.salaryFloor;
-  if (floor && job.comp) {
-    const annual = annualize(job.comp);
-    const top = annual?.max ?? annual?.min;
-    if (top != null && top < floor) reasons.push(`comp-below-floor:${top}<${floor}`);
-  }
+  const compReason = compensationReason(job, targets.salaryFloor);
+  if (compReason) reasons.push(compReason);
 
   // 5. Deal-breakers anywhere in the description.
   const dealBreaker = containsAny(job.descriptionText, targets.dealBreakers);
@@ -65,10 +74,8 @@ export function hardFilter(job, profile, appsIndex, policy) {
 
   // 7. Stale postings.
   const maxAgeDays = caps.maxJobAgeDays ?? 60;
-  if (job.postedAt) {
-    const age = (Date.now() - new Date(job.postedAt).getTime()) / DAY_MS;
-    if (Number.isFinite(age) && age > maxAgeDays) reasons.push(`stale:${Math.round(age)}d`);
-  }
+  const stale = staleReason(job, maxAgeDays);
+  if (stale) reasons.push(stale);
 
   return { pass: reasons.length === 0, reasons };
 }

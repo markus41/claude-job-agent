@@ -43,3 +43,20 @@ test('deterministic select returns scored jobs within caps and excludes active p
   assert.equal(JSON.parse(again.stdout).items.length, 2);
 });
 
+
+test('doctor accepts configured auto mode with optional achievements absent', () => {
+  const p = paths(); mkdirSync(p.profileDir, { recursive: true }); mkdirSync(p.configDir, { recursive: true });
+  writeFileSync(p.profileFile, '{"name":"Synthetic Person","targets":{}}'); writeFileSync(p.resumeFile, 'Synthetic resume'); writeFileSync(p.answersFile, '{}');
+  writeFileSync(p.companiesFile, '{"targets":[{"company":"Synthetic","ats":"lever","slug":"synthetic"}]}');
+  writeFileSync(p.policyFile, '{"approval":{"mode":"auto"}}');
+  const result = cli('doctor'); assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test('init can scaffold a relocated workspace from committed examples', () => {
+  const result = cli('init'); assert.equal(result.status, 0, result.stderr);
+  const state = cli('workspace', '--json'); assert.equal(state.status, 0, state.stderr);
+  const value = JSON.parse(state.stdout);
+  assert.ok(value.blockers.some((x) => /placeholder/.test(x)));
+  assert.equal(value.blockers.some((x) => /missing profile/.test(x)), false);
+});
+

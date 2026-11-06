@@ -3,6 +3,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, test } from 'node:test';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { normalizeManual } from '../src/lib/normalize.mjs';
 import { paths } from '../src/lib/config.mjs';
 import * as store from '../src/lib/store.mjs';
@@ -47,5 +49,32 @@ test('application mutation refuses while another live process owns the state loc
   const p = paths(); mkdirSync(p.stateDir, { recursive: true });
   writeFileSync(join(p.stateDir, 'state.lock'), JSON.stringify({ pid: process.pid + 0, nonce: 'another-owner' }));
   assert.throws(() => queued(1), /busy|locked/i);
+});
+
+
+test('failed session publication remains locked and recovery never refunds an auto batch', async () => {
+  const { DEFAULT_POLICY } = await import('../src/lib/config.mjs');
+  const { buildAttestation, readAttestation } = await import('../src/lib/auto.mjs');
+  const a = queued(1); store.importScores([{ jobId: a.jobId, score: 90, verdict: 'strong' }]);
+  const p = paths(); const d = join(p.applicationsDir, a.dir);
+  for (const f of ['resume.md', 'cover-letter.md', 'answers.md']) writeFileSync(join(d, f), 'Synthetic material');
+  store.saveAttestation(buildAttestation({ batchLimit: 2, ttlHours: 1, requireScore: 80 }));
+  const policy = structuredClone(DEFAULT_POLICY); policy.approval.mode = 'auto';
+  const rename = fs.renameSync; const write = fs.writeFileSync;
+  fs.renameSync = (from, to) => { if (to === p.sessionFile) throw new Error('Synthetic session write failure'); return rename(from, to); };
+  fs.writeFileSync = (file, ...args) => { if (file === p.sessionFile) throw new Error('Synthetic session write failure'); return write(file, ...args); };
+  syncBuiltinESMExports();
+  try { assert.throws(() => store.autoArm(a.id, { policy, hasResumePdf: true }), /Synthetic session write failure/); }
+  finally { fs.renameSync = rename; fs.writeFileSync = write; syncBuiltinESMExports(); }
+  assert.equal(store.readSession(), null); assert.equal(readAttestation().used, 1);
+  store.recoverAuthorization();
+  assert.equal(store.getApp(a.id).status, 'queued'); assert.equal(readAttestation().used, 1);
+});
+
+test('recording blocked revokes the matching armed session without a separate command', () => {
+  const a = queued(1); store.approveApplication(a.id);
+  store.recordStatus(a.id, 'blocked', { note: 'Synthetic login wall' });
+  assert.equal(store.readSession(), null);
+  assert.equal(existsSync(paths().sessionFile), false);
 });
 

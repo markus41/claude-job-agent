@@ -25,6 +25,9 @@ depth that every application this tool writes sounds like *them* and cites
 ## Phase 0 — Scaffold and set expectations
 
 Run `node bin/jobagent.mjs init` (never overwrites existing files). Then:
+Run `node bin/jobagent.mjs workspace --json` and use its resolved absolute
+profile/config/upload paths throughout this interview, including when
+`JOBAGENT_HOME` points outside the project.
 
 > "I'm going to interview you properly — about 30-45 minutes, and worth every
 > minute, because everything I learn here goes into every application. We'll

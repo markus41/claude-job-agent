@@ -11,6 +11,10 @@ external service.
 
 ## Procedure
 
+Resolve the workspace with `node bin/jobagent.mjs workspace --json`; use its
+absolute paths for profile and data files. Scoring is offline by procedure;
+the Bash tool itself is not a network sandbox.
+
 1. Run `node bin/jobagent.mjs shortlist --json` (add `--limit N` if the
    orchestrator asked for a specific batch size) and parse the `items` array.
    If it is empty, report that and stop.

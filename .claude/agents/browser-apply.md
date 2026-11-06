@@ -29,13 +29,18 @@ attended and ask.
    - `session` is non-null, not expired, and names the application you were
      asked to submit (`appId` matches).
    - That application's status is `approved`.
+   Run `node bin/jobagent.mjs workspace --json` for the resolved workspace
+   paths and use them for every read. If recovery is needed, stop; the
+   orchestrator repairs state and obtains fresh authorization.
 2. Read the application folder (`applications/<dir>/`): `job.json`,
    `resume.md`, `cover-letter.md`, `answers.md`. Read `profile/profile.json`
    for contact fields, and `profile/achievements.json` if a question calls for
    detail the package doesn't carry. If `answers.md` contains any
    `NEEDS HUMAN INPUT`, stop — ask the human (attended) or record `blocked`
    (unattended). Never improvise an answer.
-3. Resume file for uploads, in preference order:
+3. Resolve the resume with `node bin/jobagent.mjs workspace --app <appId> --json`.
+   Use its `package.resumePdf`; this is the same choice preflight checks.
+   Resume preference:
    `applications/<dir>/resume.pdf` (tailored export) →
    `profile/resume.pdf` (master export) →
    the newest PDF in `profile/uploads/` (the candidate's own uploaded
@@ -79,3 +84,8 @@ attended and ask.
 5. Report: outcome, confirmation details, screenshots taken, anything odd.
 
 One application per armed session. When in doubt at any step: stop and ask.
+
+Use snapshot, navigate, click, type/fill_form, select_option and file_upload
+for this flow. The gate rejects arbitrary scripts, unknown operations and
+new/select tab operations; treat that refusal as a stop. It evaluates the
+verified Playwright 0.0.84 tool set.

@@ -1,5 +1,6 @@
 // Builds the status snapshot used by `jobagent status` and the /status command.
 import { loadApps, loadJobs, readSession, submittedToday } from '../lib/store.mjs';
+import { pendingFollowUps } from '../lib/follow-ups.mjs';
 
 export function buildStatus() {
   const jobs = Object.values(loadJobs().jobs);
@@ -14,13 +15,7 @@ export function buildStatus() {
   const byStatus = {};
   for (const a of apps) byStatus[a.status] = (byStatus[a.status] ?? 0) + 1;
 
-  const followUpsDue = apps
-    .filter((a) => ['submitted', 'confirmed'].includes(a.status))
-    .flatMap((a) =>
-      (a.followUps?.due ?? [])
-        .filter((d) => !(a.followUps?.done ?? []).includes(d) && new Date(d).getTime() <= now)
-        .map((d) => ({ appId: a.id, company: a.company, title: a.title, dueAt: d }))
-    );
+  const followUpsDue = apps.flatMap((a) => pendingFollowUps(a, { now }));
 
   return {
     jobs: {

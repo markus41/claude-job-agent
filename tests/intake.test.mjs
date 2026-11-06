@@ -37,3 +37,15 @@ test('merged policy rejects malformed settings before consumers can compare them
   }
 });
 
+
+test('package creation rejects an existing symbolic-link directory', async () => {
+  const { symlinkSync, readdirSync } = await import('node:fs');
+  const p = paths(); mkdirSync(p.applicationsDir, { recursive: true });
+  const outside = join(p.root, 'outside'); mkdirSync(outside);
+  const linked = join(p.applicationsDir, 'linked');
+  symlinkSync(outside, linked, process.platform === 'win32' ? 'junction' : 'dir');
+  const { applicationPath } = await import('../src/lib/package-paths.mjs');
+  assert.throws(() => applicationPath('linked'), /unsafe|leaves/i);
+  assert.deepEqual(readdirSync(outside), []);
+});
+

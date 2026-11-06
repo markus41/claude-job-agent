@@ -17,6 +17,7 @@ export function paths() {
   const r = root();
   return {
     root: r,
+    projectRoot: REPO_ROOT,
     dataDir: join(r, 'data'),
     stateDir: join(r, 'data', 'state'),
     jobsFile: join(r, 'data', 'jobs.json'),

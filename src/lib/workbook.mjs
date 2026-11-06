@@ -6,6 +6,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { paths } from './config.mjs';
 import { ensureDir } from './util.mjs';
+import { pendingFollowUps } from './follow-ups.mjs';
 
 // --- CRC32 (standard polynomial, table-driven) --------------------------------
 const CRC_TABLE = (() => {
@@ -116,8 +117,7 @@ function toRows(appsMap, jobsMap) {
       const job = jobsMap?.[a.jobId];
       const history = a.history ?? [];
       const lastWithNote = [...history].reverse().find((h) => h.note);
-      const doneSet = new Set(a.followUps?.done ?? []);
-      const nextFollowUp = (a.followUps?.due ?? []).filter((d) => !doneSet.has(d)).sort()[0];
+      const nextFollowUp = pendingFollowUps(a)[0]?.dueAt;
       return {
         id: a.id,
         company: a.company,

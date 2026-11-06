@@ -28,3 +28,14 @@ export function applicationPath(dir) {
   return target;
 }
 
+export function containedWorkspaceFile(file) {
+  const p = paths();
+  const actual = physicalPath(file);
+  const root = physicalPath(p.root);
+  const roots = [p.profileDir, p.applicationsDir].map(physicalPath);
+  if (!roots.some((base) => isInside(root, base) && isInside(base, actual))) {
+    throw new Error('Unsafe file: path leaves profile/ or applications/');
+  }
+  return file;
+}
+

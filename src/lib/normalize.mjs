@@ -176,6 +176,17 @@ export function normalizeManual(entry) {
 }
 
 // --- ATS detection from a careers URL ----------------------------------------
+function detectGreenhouse(u, host, seg) {
+  if (seg[0] === 'embed') {
+    const slug = u.searchParams.get('for');
+    return slug ? { ats: 'greenhouse', slug } : null;
+  }
+  const eu = ['boards.eu.greenhouse.io', 'job-boards.eu.greenhouse.io'].includes(host);
+  const hosted = eu || ['boards.greenhouse.io', 'job-boards.greenhouse.io'].includes(host);
+  if (!hosted || !seg[0]) return null;
+  return { ats: 'greenhouse', slug: seg[0], ...(eu ? { region: 'eu' } : {}) };
+}
+
 export function detectAts(url) {
   let u;
   try {
@@ -186,21 +197,7 @@ export function detectAts(url) {
   const host = u.hostname.toLowerCase();
   const seg = u.pathname.split('/').filter(Boolean);
 
-  if (host === 'boards.greenhouse.io' || host === 'job-boards.greenhouse.io') {
-    // https://boards.greenhouse.io/{slug}[/jobs/{id}] or /embed/job_board?for={slug}
-    if (seg[0] === 'embed') {
-      const slug = u.searchParams.get('for');
-      return slug ? { ats: 'greenhouse', slug } : null;
-    }
-    return seg[0] ? { ats: 'greenhouse', slug: seg[0] } : null;
-  }
-  if (host === 'boards.eu.greenhouse.io' || host === 'job-boards.eu.greenhouse.io') {
-    return seg[0] ? { ats: 'greenhouse', slug: seg[0], region: 'eu' } : null;
-  }
-  if (host.endsWith('greenhouse.io') && seg[0] === 'embed') {
-    const slug = u.searchParams.get('for');
-    return slug ? { ats: 'greenhouse', slug } : null;
-  }
+  if (host === 'greenhouse.io' || host.endsWith('.greenhouse.io')) return detectGreenhouse(u, host, seg);
   if (host === 'jobs.lever.co') {
     return seg[0] ? { ats: 'lever', slug: seg[0] } : null;
   }

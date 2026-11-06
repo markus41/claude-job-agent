@@ -251,6 +251,29 @@ The repo ships two ways, deliberately asymmetric:
   pipeline logic and no hooks — it exists to get people *to* the workspace,
   not to run the pipeline outside the gate's reach.
 
+## Deterministic workflow ownership
+
+- `intake.mjs` validates canonical jobs before stores accept an entire batch.
+  Package paths and existing links are checked again at file creation.
+- `policy.mjs` validates the effective merged policy before callers use it.
+- `workspace.mjs` resolves readiness, relocated paths and tailored/master/uploaded
+  resume precedence. The project root owns installed hooks/examples; the
+  workspace root owns private data.
+- `pipeline/select.mjs` orders eligible strong/good jobs by verdict, descending
+  score and job id, capped by policy and excluding active packages.
+- `authorization.mjs` publishes browser permission last under the shared
+  application-state lock. A pending journal denies the browser. Recovery
+  revokes permission and requeues interrupted approvals; consumed batch slots
+  are retained. This is conservative recovery, not a general transaction engine.
+- `follow-ups.mjs` gives status and spreadsheet one due/completed definition.
+  Draft and completion records are idempotent by application and due date.
+
+The submission tool adapter is pinned to Playwright MCP 0.0.84. Arbitrary
+scripts and unclassified operations are denied. Known click/type/form
+operations still need a valid armed session; human-only shell denials run
+before policy/session context is loaded. Host redirects, actual page state,
+and unrestricted shell behavior are not a complete sandbox.
+
 ## Extension points
 
 - **New ATS read client:** add `src/ats/<name>.mjs` (fetch + normalize),
