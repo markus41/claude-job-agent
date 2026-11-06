@@ -11,12 +11,14 @@ import { loadCompanies, loadPolicy, loadProfile, paths, profileFilesPresent } fr
 import { detectAts, normalizeManual } from '../src/lib/normalize.mjs';
 import {
   approveApplication, autoArm, createApplication, disarmSession, getApp, getJob,
-  importScores, loadApps, recordStatus, revokeAttestation, saveAttestation, upsertJobs,
+  importScores, loadApps, recordStatus, revokeAttestation, saveAttestation, upsertJobs, recoverAuthorization,
 } from '../src/lib/store.mjs';
 import { ensureDir, readJson } from '../src/lib/util.mjs';
 import { discover } from '../src/pipeline/discover.mjs';
 import { buildStatus, renderStatus } from '../src/pipeline/report.mjs';
 import { shortlist } from '../src/pipeline/shortlist.mjs';
+import { selectForTailoring } from '../src/pipeline/select.mjs';
+import { inspectWorkspace, resolveResume } from '../src/lib/workspace.mjs';
 
 const USAGE = `jobagent — job-application pipeline CLI
 
@@ -27,6 +29,7 @@ Setup
   doctor                      Check the environment and configuration
   upload <file>               Copy a resume/source document into profile/uploads/
   policy                      Print the effective (merged) policy as JSON
+  workspace [--json]          Inspect readiness and resolved workspace paths
 
 Sourcing
   discover                    Poll all configured ATS boards into the job store
@@ -38,10 +41,12 @@ Scoring & tailoring
   shortlist [--limit N] [--rescore] [--json]   Hard-filter unscored jobs → data/shortlist.json
   import-scores <file>        Validate + merge fit scores from the scorer agent
   package <jobId> [--force]   Create an application folder for a scored job
+  select [--limit N] [--json] Select ranked unpackaged jobs within tailoring caps
 
 Submission (human-gated)
   approve <appId>             HUMAN ONLY: approve a queued application + arm the browser gate
   disarm                      Disarm the apply session (approved apps drop back to queued)
+  recover                     Revoke stale sessions and repair interrupted authorization
 
 Auto-submit mode (batch authorization — see docs/SAFETY.md)
   auto-enable [--batch N] [--hours H] [--min-score S]
@@ -128,8 +133,7 @@ async function cmdDoctor() {
   try {
     const policy = loadPolicy();
     check((policy.allowlist?.hosts ?? []).length > 0, 'policy allowlist is non-empty');
-    check(policy.approval?.mode === 'manual', 'approval mode is "manual" (human approves each submission)',
-      'auto-approval is intentionally unsupported; keep approval.mode = "manual"');
+    check(['manual', 'auto'].includes(policy.approval.mode), `approval mode is "${policy.approval.mode}" (human authorization required)`);
     const weights = Object.values(policy.scoring?.weights ?? {});
     const weightSum = weights.reduce((a, b) => a + b, 0);
     check(weights.length === 0 || weightSum === 100,
@@ -157,6 +161,7 @@ async function cmdDoctor() {
   info(present.resumePdf, 'profile/resume.pdf for form uploads',
     'export your resume to PDF (Word/Google Docs, or pandoc) so /apply can upload it');
 
+  for (const blocker of inspectWorkspace().blockers) check(false, blocker);
   out(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
   if (failures > 0) process.exit(1);
 }
@@ -349,19 +354,15 @@ async function cmdDisarm() {
 // --- Auto-submit mode -----------------------------------------------------------
 
 function resumePdfAvailable() {
-  const p = paths();
-  if (existsSync(p.resumePdfFile)) return true;
-  if (!existsSync(p.uploadsDir)) return false;
-  return readdirSync(p.uploadsDir).some((f) => f.toLowerCase().endsWith('.pdf'));
+  return Boolean(resolveResume());
 }
 
 function eligibleForAuto(policy, attestation) {
   const apps = loadApps().apps;
-  const hasResumePdf = resumePdfAvailable();
   const queued = Object.values(apps).filter((a) => a.status === 'queued');
   return queued.map((app) => {
     const job = getJob(app.jobId);
-    const blockers = autoPreflight({ app, job, policy, attestation, apps, hasResumePdf });
+    const blockers = autoPreflight({ app, job, policy, attestation, apps, hasResumePdf: Boolean(resolveResume(app)) });
     return {
       appId: app.id,
       company: app.company,
@@ -476,7 +477,7 @@ async function cmdAutoArm(appId) {
   try {
     const { session, attestation } = autoArm(appId, {
       policy,
-      hasResumePdf: resumePdfAvailable(),
+      hasResumePdf: Boolean(resolveResume(getApp(appId))),
     });
     out(`Armed ${appId} for ${session.hosts.join(', ')} until ${session.expiresAt}.`);
     out(`Batch: ${attestation.used}/${attestation.batchLimit} used.`);
@@ -531,12 +532,22 @@ async function cmdStatus(args) {
 
 // ------------------------------------------------------------------ router --
 
+function cmdSelect(args) {
+  const { values } = parseArgs({ args, options: { limit: { type: 'string' }, json: { type: 'boolean' } } });
+  const result = selectForTailoring(loadProfile(), loadPolicy(), values.limit ? { limit: Number(values.limit) } : {});
+  out(values.json ? JSON.stringify(result, null, 2) : result.items.map((j) => `${j.id}  [${j.score.value}]  ${j.company} — ${j.title}`).join('\n'));
+}
+
+function cmdWorkspace() { out(JSON.stringify(inspectWorkspace(), null, 2)); }
+
 const [, , command, ...rest] = process.argv;
 
 try {
   switch (command) {
     case 'init': await cmdInit(); break;
     case 'doctor': await cmdDoctor(); break;
+    case 'workspace': cmdWorkspace(); break;
+    case 'select': cmdSelect(rest); break;
     case 'upload': await cmdUpload(rest[0]); break;
     case 'policy': await cmdPolicy(); break;
     case 'discover': await cmdDiscover(); break;
@@ -548,6 +559,7 @@ try {
     case 'package': await cmdPackage(rest[0], rest.slice(1)); break;
     case 'approve': await cmdApprove(rest[0]); break;
     case 'disarm': await cmdDisarm(); break;
+    case 'recover': out(JSON.stringify(recoverAuthorization())); break;
     case 'auto-enable': await cmdAutoEnable(rest); break;
     case 'auto-status': await cmdAutoStatus(rest); break;
     case 'auto-revoke': await cmdAutoRevoke(); break;

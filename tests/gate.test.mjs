@@ -152,3 +152,10 @@ test('typed content: SSN and card patterns blocked, normal fields pass', () => {
 test('non-browser, non-bash tools produce no opinion', () => {
   assert.equal(evaluateGate({ tool_name: 'Read', tool_input: { file_path: 'x' } }, ctx({ session: null })), null);
 });
+
+test('arbitrary script and unknown browser operations are denied while normal observation works', () => {
+  for (const name of ['evaluate', 'run_code', 'future_mutation']) {
+    assert.equal(evaluateGate({ tool_name: 'mcp__playwright__browser_' + name, tool_input: {} }, ctx())?.decision, 'deny');
+  }
+  assert.equal(evaluateGate({ tool_name: 'mcp__playwright__browser_snapshot', tool_input: {} }, ctx()), null);
+});

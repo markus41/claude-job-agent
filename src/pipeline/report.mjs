@@ -39,6 +39,7 @@ export function buildStatus() {
     session: session
       ? { appId: session.appId, expiresAt: session.expiresAt, expired: Boolean(session.expired) }
       : null,
+    recoveryNeeded: apps.some((a) => a.status === 'approved') && (!session || session.expired),
     followUpsDue,
   };
 }
