@@ -14,7 +14,8 @@
     "discover": "node bin/jobagent.mjs discover",
     "shortlist": "node bin/jobagent.mjs shortlist",
     "status": "node bin/jobagent.mjs status",
-    "doctor": "node bin/jobagent.mjs doctor"
+    "doctor": "node bin/jobagent.mjs doctor",
+    "check:complexity": "eslint src bin .claude/hooks"
   },
   "repository": {
     "type": "git",
@@ -32,5 +33,12 @@
     "playwright",
     "automation"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^10.14.0",
+    "eslint-plugin-sonarjs": "^4.2.2"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
+  }
 }

@@ -1,12 +1,18 @@
 // JSON-file state store: jobs, applications, the armed apply-session, and the
 // audit log. Volumes here are hundreds of records, so plain JSON with atomic
 // writes beats dragging in a database. Swap this module out if you outgrow it.
-import { appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { paths } from './config.mjs';
 import { autoPreflight, readAttestation } from './auto.mjs';
 import { ensureDir, nowIso, readJson, sha1, slugify, truncate, writeJsonAtomic } from './util.mjs';
 import { writeTrackerFiles } from './workbook.mjs';
+import { assertCanonicalJob } from './intake.mjs';
+import { TRANSITIONS, ACTIVE_STATUSES, applicationIdentity } from './lifecycle.mjs';
+import { applicationPath } from './package-paths.mjs';
+import { stateMutation } from './state-mutation.mjs';
+import { followUpDraftName, updateFollowUp } from './follow-ups.mjs';
+import { authorizationJournal, assertNoActiveSession, commitAuthorization, prepareSession, rawSession, recoverState } from './authorization.mjs';
 
 // --- Jobs --------------------------------------------------------------------
 
@@ -18,7 +24,8 @@ export function saveJobs(db) {
   writeJsonAtomic(paths().jobsFile, db);
 }
 
-export function upsertJobs(newJobs) {
+export const upsertJobs = stateMutation(function upsertJobs(newJobs) {
+  newJobs.forEach(assertCanonicalJob);
   const db = loadJobs();
   let added = 0;
   let seenAgain = 0;
@@ -41,13 +48,13 @@ export function upsertJobs(newJobs) {
   }
   saveJobs(db);
   return { added, seenAgain, total: Object.keys(db.jobs).length };
-}
+});
 
 export function getJob(jobId) {
   return loadJobs().jobs[jobId] ?? null;
 }
 
-export function importScores(entries) {
+export const importScores = stateMutation(function importScores(entries) {
   if (!Array.isArray(entries)) throw new Error('Scores file must be a JSON array.');
   const db = loadJobs();
   const errors = [];
@@ -80,41 +87,23 @@ export function importScores(entries) {
   }
   saveJobs(db);
   return { merged: entries.length };
-}
+});
 
 // --- Applications --------------------------------------------------------------
 
 // Lifecycle: packaged → tailored → queued → approved → submitted → confirmed →
 // interview → offer → closed, with blocked/withdrawn/rejected side-exits.
-// "approved" is deliberately reachable ONLY through `jobagent approve`
-// (human, interactive terminal) — never through `record`.
-export const TRANSITIONS = {
-  packaged: ['tailored', 'withdrawn'],
-  tailored: ['queued', 'withdrawn'],
-  queued: ['approved', 'blocked', 'withdrawn'],
-  approved: ['submitted', 'blocked', 'queued', 'withdrawn'],
-  submitted: ['confirmed', 'rejected', 'interview', 'blocked', 'closed'],
-  confirmed: ['rejected', 'interview', 'closed'],
-  interview: ['offer', 'rejected', 'closed'],
-  blocked: ['queued', 'withdrawn', 'closed'],
-  offer: ['closed'],
-  rejected: ['closed'],
-  withdrawn: [],
-  closed: [],
-};
-
-export const ACTIVE_STATUSES = new Set([
-  'packaged', 'tailored', 'queued', 'approved', 'submitted', 'confirmed', 'interview', 'blocked',
-]);
-
+// Approval comes from a human terminal or auto-arm under a human attestation;
+// it is never reachable through record.
+export { TRANSITIONS, ACTIVE_STATUSES } from './lifecycle.mjs';
 export function loadApps() {
   return readJson(paths().appsFile, { version: 1, apps: {} });
 }
 
-export function saveApps(db) {
+export const saveApps = stateMutation(function saveApps(db) {
   writeJsonAtomic(paths().appsFile, db);
   refreshTracker(db);
-}
+});
 
 // Human-readable live view of the pipeline: data/applications.xlsx + .csv.
 // A view, never the ledger — if writing it fails, the state write still stands.
@@ -141,19 +130,20 @@ export function getApp(appId) {
   return loadApps().apps[appId] ?? null;
 }
 
-export function createApplication(job, { force = false } = {}) {
+export const createApplication = stateMutation(function createApplication(job, { force = false } = {}) {
+  assertCanonicalJob(job);
   const db = loadApps();
   const dup = Object.values(db.apps).find(
-    (a) => a.jobId === job.id && ACTIVE_STATUSES.has(a.status)
+    (a) => ACTIVE_STATUSES.has(a.status) && (a.jobId === job.id || applicationIdentity(a) === applicationIdentity(job))
   );
   if (dup && !force) {
-    const err = new Error(`An active application for this job already exists: ${dup.id} (${dup.status}). Use --force to create another.`);
+    const err = new Error(`An active application for this job or company/title already exists: ${dup.id} (${dup.status}). Use --force to create another.`);
     err.code = 'EDUPLICATE';
     throw err;
   }
   const id = `app-${sha1(`${job.id}|${nowIso()}`).slice(0, 8)}`;
   const dirName = `${job.companySlug}-${truncate(slugify(job.title), 40).replace(/…$/, '')}-${id.slice(4)}`;
-  const dir = join(paths().applicationsDir, dirName);
+  const dir = applicationPath(dirName);
   ensureDir(dir);
   writeJsonAtomic(join(dir, 'job.json'), job);
 
@@ -175,9 +165,9 @@ export function createApplication(job, { force = false } = {}) {
   saveApps(db);
   appendAudit({ actor: 'cli', event: 'package', appId: id, jobId: job.id });
   return app;
-}
+});
 
-export function recordStatus(appId, status, { note = '', force = false, followUpDays = [7, 14] } = {}) {
+export const recordStatus = stateMutation(function recordStatus(appId, status, { note = '', force = false, followUpDays = [7, 14] } = {}) {
   if (status === 'approved') {
     const err = new Error('Status "approved" can only be set via `jobagent approve` (human, interactive terminal).');
     err.code = 'EAPPROVALPATH';
@@ -205,15 +195,15 @@ export function recordStatus(appId, status, { note = '', force = false, followUp
     });
   }
   saveApps(db);
-  if (status === 'submitted') disarmSession({ quiet: true });
+  if (status !== 'approved' && rawSession()?.appId === appId) disarmSession({ quiet: true });
   appendAudit({ actor: 'cli', event: 'record', appId, status, note: truncate(note, 200) });
   return app;
-}
+});
 
 // --- Auto-submit mode ----------------------------------------------------------
 
 // Written only by `jobagent auto-enable` (TTY-only, typed confirmation).
-export function saveAttestation(att) {
+export const saveAttestation = stateMutation(function saveAttestation(att) {
   writeJsonAtomic(paths().autoAttestationFile, att);
   appendAudit({
     actor: 'human',
@@ -223,20 +213,22 @@ export function saveAttestation(att) {
     expiresAt: att.expiresAt,
   });
   return att;
-}
+});
 
-export function revokeAttestation() {
+export const revokeAttestation = stateMutation(function revokeAttestation() {
   const p = paths().autoAttestationFile;
   const existed = existsSync(p);
   if (existed) rmSync(p);
+  disarmSession({ quiet: true });
   appendAudit({ actor: 'cli', event: 'auto-revoke' });
   return existed;
-}
+});
 
 // Agents MAY call this (via `jobagent auto-arm`). It arms the browser gate for
 // one application only if autoPreflight() returns no blockers, and consumes
 // one unit of the human's attested batch.
-export function autoArm(appId, { policy, hasResumePdf }) {
+export const autoArm = stateMutation(function autoArm(appId, { policy, hasResumePdf }) {
+  recoverAuthorization();
   const db = loadApps();
   const app = db.apps[appId];
   const job = app ? loadJobs().jobs[app.jobId] : null;
@@ -251,14 +243,14 @@ export function autoArm(appId, { policy, hasResumePdf }) {
     throw err;
   }
 
+  assertNoActiveSession();
+  const session = prepareSession(app, { ttlMinutes: policy?.approval?.sessionTtlMinutes ?? 60, attestation });
   app.status = 'approved';
   app.history.push({
     status: 'approved',
     at: nowIso(),
     note: `auto-approval under batch attested ${attestation.attestedAt} (${(attestation.used ?? 0) + 1}/${attestation.batchLimit})`,
   });
-  saveApps(db);
-
   const updated = {
     ...attestation,
     used: (attestation.used ?? 0) + 1,
@@ -267,68 +259,59 @@ export function autoArm(appId, { policy, hasResumePdf }) {
   delete updated.expired;
   delete updated.exhausted;
   delete updated.remaining;
-  writeJsonAtomic(paths().autoAttestationFile, updated);
-
-  const session = armSession(app, { ttlMinutes: policy?.approval?.sessionTtlMinutes ?? 60 });
-  appendAudit({
+  commitAuthorization({
+    app, session,
+    persist: () => { writeJsonAtomic(paths().autoAttestationFile, updated); saveApps(db); },
+    audit: () => appendAudit({
     actor: 'agent',
     event: 'auto-arm',
     appId,
     used: updated.used,
     batchLimit: updated.batchLimit,
     expiresAt: session.expiresAt,
+    }),
   });
   return { app, session, attestation: updated };
-}
+});
 
 // Called by `jobagent approve` only (which enforces the interactive-terminal check).
-export function approveApplication(appId, { sessionTtlMinutes = 60 } = {}) {
+export const approveApplication = stateMutation(function approveApplication(appId, { sessionTtlMinutes = 60 } = {}) {
+  recoverAuthorization();
+  assertNoActiveSession();
   const db = loadApps();
   const app = db.apps[appId];
   if (!app) throw new Error(`Unknown application id: ${appId}`);
   if (app.status !== 'queued') {
     throw new Error(`Only "queued" applications can be approved. ${appId} is "${app.status}".`);
   }
+  const session = prepareSession(app, { ttlMinutes: sessionTtlMinutes });
   app.status = 'approved';
   app.history.push({ status: 'approved', at: nowIso(), note: 'human approval' });
-  saveApps(db);
-  const session = armSession(app, { ttlMinutes: sessionTtlMinutes });
-  appendAudit({ actor: 'human', event: 'approve', appId, expiresAt: session.expiresAt });
+  commitAuthorization({ app, session, persist: () => saveApps(db),
+    audit: () => appendAudit({ actor: 'human', event: 'approve', appId, expiresAt: session.expiresAt }) });
   return { app, session };
-}
+});
 
 // --- Apply session (arms the browser gate) ------------------------------------
 
-export function armSession(app, { ttlMinutes = 60 } = {}) {
-  let host = null;
-  try {
-    host = new URL(app.applyUrl).hostname.toLowerCase();
-  } catch {
-    throw new Error(`Application ${app.id} has no valid applyUrl (${app.applyUrl}).`);
-  }
-  const now = new Date();
-  const session = {
-    appId: app.id,
-    jobId: app.jobId,
-    hosts: [host],
-    armedAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + ttlMinutes * 60_000).toISOString(),
-  };
-  writeJsonAtomic(paths().sessionFile, session);
-  return session;
-}
-
 export function readSession() {
-  const session = readJson(paths().sessionFile, null);
+  if (existsSync(authorizationJournal())) return null;
+  const session = rawSession();
   if (!session) return null;
-  if (new Date(session.expiresAt).getTime() < Date.now()) return { ...session, expired: true };
+  if (loadApps().apps[session.appId]?.status !== 'approved') return null;
+  if (session.autoAttestedAt) {
+    const att = readAttestation();
+    if (!att || att.expired || att.attestedAt !== session.autoAttestedAt) return null;
+  }
+  if (!(Date.parse(session.expiresAt) > Date.now())) return { ...session, expired: true };
   return session;
 }
 
-export function disarmSession({ quiet = false } = {}) {
+export const disarmSession = stateMutation(function disarmSession({ quiet = false } = {}) {
   const p = paths().sessionFile;
   const existed = existsSync(p);
   if (existed) rmSync(p);
+  if (existsSync(authorizationJournal())) rmSync(authorizationJournal());
   // If an app is stuck in "approved" with no armed session, drop it back to queued.
   const db = loadApps();
   for (const app of Object.values(db.apps)) {
@@ -340,7 +323,29 @@ export function disarmSession({ quiet = false } = {}) {
   saveApps(db);
   if (!quiet) appendAudit({ actor: 'cli', event: 'disarm' });
   return existed;
-}
+});
+
+export const recoverAuthorization = stateMutation(function recoverAuthorization() {
+  return recoverState({ loadApps, saveApps, audit: appendAudit, isSessionValid: () => {
+    const session = readSession();
+    return session && !session.expired;
+  } });
+});
+
+export const recordFollowUp = stateMutation(function recordFollowUp(appId, dueAt, options = {}) {
+  const db = loadApps();
+  const app = db.apps[appId];
+  if (!app) throw new Error('Unknown application id: ' + appId);
+  if (!options.complete) {
+    const draft = join(applicationPath(app.dir), followUpDraftName(dueAt));
+    if (!existsSync(draft) || !statSync(draft).isFile()) throw new Error('Write the follow-up draft before recording it');
+  }
+  if (updateFollowUp(app, dueAt, options)) {
+    saveApps(db);
+    appendAudit({ actor: options.complete ? 'human' : 'agent', event: options.complete ? 'follow-up-complete' : 'follow-up-draft', appId, dueAt });
+  }
+  return app;
+});
 
 // --- Counters & audit ----------------------------------------------------------
 

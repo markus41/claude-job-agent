@@ -7,6 +7,13 @@ why, and how each rule is enforced.
 
 ## Principles
 
+Current enforcement limits: role instructions such as “no network” are not
+an operating-system sandbox, because those roles can invoke Bash. The browser
+gate checks verified tool inputs; redirects and page changes caused by clicks
+still need the browser agent's scope checks. Arbitrary script execution and
+unknown browser operations are denied. Claims about absolute isolation should
+be read within these limits.
+
 1. **Human accountability.** A job application is a representation to another
    human being. Every submission is authorized by a person at a real
    terminal — either per application (`approve`, the default) or as an

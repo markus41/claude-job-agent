@@ -10,6 +10,10 @@ application package a human can review in two minutes and trust completely.
 
 ## Procedure (per jobId)
 
+Resolve the workspace with `node bin/jobagent.mjs workspace --json`; use its
+absolute paths for profile, application and data files. File-only work is
+a procedure; the Bash tool itself is not a network sandbox.
+
 1. Run `node bin/jobagent.mjs package <jobId>` — it creates
    `applications/<folder>/` with `job.json` and registers the application
    (status `packaged`). If it refuses (low score, duplicate), report why and

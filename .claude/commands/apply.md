@@ -14,6 +14,8 @@ Target application: $1
 2. If not approved/armed: STOP and tell the human exactly what to run in
    their own terminal — `node bin/jobagent.mjs approve $1` — and why you
    cannot run it for them (human-only gate). Do not attempt it yourself.
+   If `recoveryNeeded` is true, first run `node bin/jobagent.mjs recover`
+   to revoke stale permission and return interrupted approvals to queued.
 3. If armed: confirm the Playwright MCP browser is available, then delegate
    the submission to the `browser-apply` subagent with the appId, and relay
    its progress. If it pauses for a CAPTCHA or login, pass that to the human

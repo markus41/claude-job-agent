@@ -1,128 +1,92 @@
-// Auto-submit mode: batch authorization instead of per-application approval.
-//
-// The human still authorizes every submission — just up front, in bulk:
-// `jobagent auto-enable` (TTY-only, typed confirmation) writes an attestation
-// covering N applications for H hours. The agent may then call
-// `jobagent auto-arm <appId>`, which arms the browser gate automatically for
-// one application IF every preflight check below passes.
-//
-// Note what does NOT change: the PreToolUse gate still only lets browser
-// tools run against an armed session, still enforces the host allowlist and
-// aggregator denylist, still blocks credential-shaped input and out-of-tree
-// uploads. Auto mode changes who may arm a session, not what the gate checks.
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+// Batch preflight shares validated policy, package inspection and host rules.
 import { paths } from './config.mjs';
 import { nowIso, readJson } from './util.mjs';
+import { inspectPackage } from './workspace.mjs';
+import { hostMatches } from './gate.mjs';
+import { assertWebUrl } from './intake.mjs';
+import { validatePolicy } from './policy.mjs';
 
-const HOUR_MS = 3_600_000;
+const validDate = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
 
 export function readAttestation() {
-  const att = readJson(paths().autoAttestationFile, null);
+  let att;
+  try { att = readJson(paths().autoAttestationFile, null); } catch {
+    return { invalid: true, expired: true, exhausted: true, remaining: 0 };
+  }
   if (!att) return null;
-  const expired = new Date(att.expiresAt).getTime() <= Date.now();
-  const exhausted = (att.used ?? 0) >= att.batchLimit;
-  return { ...att, expired, exhausted, remaining: Math.max(0, att.batchLimit - (att.used ?? 0)) };
+  const invalid = !Number.isInteger(att.batchLimit) || att.batchLimit < 1
+    || !Number.isInteger(att.used) || att.used < 0 || !Number.isFinite(att.requireScore)
+    || att.requireScore < 0 || att.requireScore > 100 || !validDate(att.expiresAt) || !validDate(att.attestedAt)
+    || !Array.isArray(att.submittedAppIds) || !att.submittedAppIds.every((id) => typeof id === 'string');
+  const expired = invalid || Date.parse(att.expiresAt) <= Date.now();
+  const exhausted = invalid || att.used >= att.batchLimit;
+  return { ...att, invalid, expired, exhausted, remaining: invalid ? 0 : Math.max(0, att.batchLimit - att.used) };
 }
 
 export function buildAttestation({ batchLimit, ttlHours, requireScore, note = '' }) {
+  if (!Number.isInteger(batchLimit) || batchLimit < 1 || !Number.isFinite(ttlHours) || ttlHours <= 0) throw new Error('Invalid batch limit or duration');
+  if (!Number.isFinite(requireScore) || requireScore < 0 || requireScore > 100) throw new Error('Invalid batch score floor');
   const now = new Date();
-  return {
-    batchLimit,
-    used: 0,
-    requireScore,
-    note,
-    attestedAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + ttlHours * HOUR_MS).toISOString(),
-    submittedAppIds: [],
-  };
+  return { batchLimit, used: 0, requireScore, note, attestedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + ttlHours * 3_600_000).toISOString(), submittedAppIds: [] };
 }
 
-/**
- * Every reason auto-submit must refuse this application. Empty array = clear.
- * Pure except for reading the package files on disk.
- *
- * @param {object} ctx {app, job, policy, attestation, apps, hasResumePdf}
- */
-export function autoPreflight({ app, job, policy, attestation, apps, hasResumePdf }) {
+function authorizationBlockers(policy, attestation) {
   const blockers = [];
-  const cfg = policy?.approval?.auto ?? {};
-
-  if (policy?.approval?.mode !== 'auto') {
-    blockers.push('auto mode is off (set approval.mode = "auto" in config/policy.json)');
-  }
-  if (!attestation) {
-    blockers.push('no batch authorization — a human must run `jobagent auto-enable` in their own terminal');
-  } else {
-    if (attestation.expired) blockers.push(`batch authorization expired at ${attestation.expiresAt}`);
-    if (attestation.exhausted) {
-      blockers.push(`batch authorization used up (${attestation.used}/${attestation.batchLimit}) — needs re-authorizing`);
-    }
-  }
-  if (!app) {
-    blockers.push('unknown application');
-    return blockers;
-  }
-  if (app.status !== 'queued') {
-    blockers.push(`application is "${app.status}", not "queued"`);
-  }
-
-  // Fit-score floor: the attested floor wins if it is stricter.
-  const floor = Math.max(cfg.requireScore ?? 80, attestation?.requireScore ?? 0);
-  const score = job?.score?.value;
-  if (score == null) blockers.push('application has no fit score');
-  else if (score < floor) blockers.push(`fit score ${score} is below the auto-submit floor ${floor}`);
-
-  // The package must be complete.
-  const dir = join(paths().applicationsDir, app.dir ?? '');
-  for (const file of ['resume.md', 'cover-letter.md', 'answers.md']) {
-    if (!existsSync(join(dir, file))) blockers.push(`package is missing ${file}`);
-  }
-
-  // Unanswered screening questions can never be machine-answered.
-  if (cfg.blockOnNeedsHumanInput !== false) {
-    const answersPath = join(dir, 'answers.md');
-    if (existsSync(answersPath)) {
-      const text = readFileSync(answersPath, 'utf8');
-      if (/NEEDS HUMAN INPUT/i.test(text)) {
-        blockers.push('answers.md still contains NEEDS HUMAN INPUT — a human must answer those questions');
-      }
-    }
-  }
-
-  if (cfg.requireResumePdf !== false && !hasResumePdf) {
-    blockers.push('no resume PDF available to upload (export profile/resume.pdf or upload one)');
-  }
-
-  // Volume caps.
-  const today = nowIso().slice(0, 10);
-  const all = Object.values(apps ?? {});
-  const submittedToday = all.filter((a) => a.submittedAt?.slice(0, 10) === today).length;
-  const dailyCap = policy?.caps?.maxApplicationsPerDay ?? 10;
-  if (submittedToday >= dailyCap) {
-    blockers.push(`daily cap reached (${submittedToday}/${dailyCap} submitted today)`);
-  }
-  const perCompanyCap = cfg.maxPerCompanyPerDay ?? 1;
-  const companyToday = all.filter(
-    (a) => a.companySlug === app.companySlug && a.submittedAt?.slice(0, 10) === today
-  ).length;
-  if (companyToday >= perCompanyCap) {
-    blockers.push(`already submitted ${companyToday} application(s) to ${app.company} today (cap ${perCompanyCap})`);
-  }
-
-  // Aggregators are never auto-submittable (nor manually — the gate refuses too).
-  try {
-    const host = new URL(app.applyUrl).hostname.toLowerCase();
-    for (const pattern of policy?.denylist?.hosts ?? []) {
-      const p = String(pattern).toLowerCase();
-      const hit = p.startsWith('*.')
-        ? host === p.slice(2) || host.endsWith(`.${p.slice(2)}`)
-        : host === p;
-      if (hit) blockers.push(`${host} is denylisted (site terms prohibit automated applications)`);
-    }
-  } catch {
-    blockers.push(`application has no valid applyUrl (${app.applyUrl})`);
-  }
-
+  try { validatePolicy(policy); } catch (err) { blockers.push(err.message); }
+  if (policy?.approval?.mode !== 'auto') blockers.push('auto mode is off (set approval.mode = "auto" in config/policy.json)');
+  if (!attestation) return [...blockers, 'no batch authorization — a human must run jobagent auto-enable personally'];
+  if (attestation.invalid) blockers.push('batch authorization is damaged; a human must inspect previous outcomes and reauthorize');
+  if (attestation.expired || !(Date.parse(attestation.expiresAt) > Date.now())) blockers.push('batch authorization expired at ' + attestation.expiresAt);
+  if (attestation.exhausted || attestation.used >= attestation.batchLimit) blockers.push('batch authorization used up — needs re-authorizing');
   return blockers;
 }
+
+function scoreBlockers(job, policy, attestation) {
+  const floor = Math.max(policy.approval.auto.requireScore, attestation?.requireScore ?? 0);
+  const score = job?.score?.value;
+  if (!Number.isFinite(score) || !Number.isFinite(floor)) return ['application has no valid fit score or score floor'];
+  return score < floor ? [`fit score ${score} is below the auto-submit floor ${floor}`] : [];
+}
+
+function packageBlockers(app, cfg, hasResumePdf) {
+  try { return inspectPackageBlockers(app, cfg, hasResumePdf); }
+  catch (err) { return [err.message]; }
+}
+
+function inspectPackageBlockers(app, cfg, hasResumePdf) {
+  const packageState = inspectPackage(app);
+  const blockers = [...packageState.blockers];
+  if (cfg.blockOnNeedsHumanInput && packageState.needsHumanInput) blockers.push('answers.md still contains NEEDS HUMAN INPUT — human input required');
+  if (cfg.requireResumePdf && !hasResumePdf && !packageState.resumePdf) blockers.push('no resume PDF available to upload');
+  return blockers;
+}
+
+function volumeBlockers(app, apps, policy) {
+  const today = nowIso().slice(0, 10);
+  const submitted = Object.values(apps ?? {}).filter((a) => a.submittedAt?.slice(0, 10) === today);
+  const blockers = [];
+  if (submitted.length >= policy.caps.maxApplicationsPerDay) blockers.push('daily cap reached');
+  const companyCount = submitted.filter((a) => a.companySlug === app.companySlug).length;
+  if (companyCount >= policy.approval.auto.maxPerCompanyPerDay) blockers.push('already submitted application(s) to ' + app.company + ' today');
+  return blockers;
+}
+
+function hostBlockers(app, policy) {
+  try {
+    const url = assertWebUrl(app.applyUrl, 'applyUrl');
+    return hostMatches(url.hostname, policy.denylist.hosts) ? [url.hostname + ' is denylisted'] : [];
+  } catch (err) { return [err.message]; }
+}
+
+export function autoPreflight({ app, job, policy, attestation, apps, hasResumePdf }) {
+  const blockers = authorizationBlockers(policy, attestation);
+  if (!app) return [...blockers, 'unknown application'];
+  if (attestation?.submittedAppIds?.includes(app.id)) blockers.push('application was already armed in this batch; inspect the previous attempt before fresh human authorization');
+  if (app.status !== 'queued') blockers.push(`application is "${app.status}", not "queued"`);
+  try { validatePolicy(policy); } catch { return blockers; }
+  return [...blockers, ...scoreBlockers(job, policy, attestation),
+    ...packageBlockers(app, policy.approval.auto, hasResumePdf),
+    ...volumeBlockers(app, apps, policy), ...hostBlockers(app, policy)];
+}
+

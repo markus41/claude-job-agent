@@ -2,7 +2,7 @@
 // Cheap, explainable, and they keep LLM scoring volume (and cost) down.
 // Nuanced judgment belongs to the fit-scorer agent, not here.
 import { annualize } from './comp.mjs';
-import { normTitle } from './util.mjs';
+import { ACTIVE_STATUSES, applicationIdentity } from './lifecycle.mjs';
 
 const DAY_MS = 86_400_000;
 
@@ -19,10 +19,22 @@ function containsAny(haystack, needles = []) {
 export function buildAppsIndex(apps) {
   const index = new Set();
   for (const app of Object.values(apps ?? {})) {
-    if (app.status === 'withdrawn') continue;
-    index.add(`${app.companySlug}|${normTitle(app.title)}`);
+    if (ACTIVE_STATUSES.has(app.status)) index.add(applicationIdentity(app));
   }
   return index;
+}
+
+function compensationReason(job, floor) {
+  if (!floor || !job.comp) return null;
+  const annual = annualize(job.comp);
+  const top = annual?.max ?? annual?.min;
+  return top != null && top < floor ? `comp-below-floor:${top}<${floor}` : null;
+}
+
+function staleReason(job, maxAgeDays) {
+  if (!job.postedAt) return null;
+  const age = (Date.now() - new Date(job.postedAt).getTime()) / DAY_MS;
+  return Number.isFinite(age) && age > maxAgeDays ? `stale:${Math.round(age)}d` : null;
 }
 
 export function hardFilter(job, profile, appsIndex, policy) {
@@ -47,28 +59,22 @@ export function hardFilter(job, profile, appsIndex, policy) {
   }
 
   // 4. Compensation floor — only when the posting states comp.
-  const floor = targets.salaryFloor;
-  if (floor && job.comp) {
-    const annual = annualize(job.comp);
-    const top = annual?.max ?? annual?.min;
-    if (top != null && top < floor) reasons.push(`comp-below-floor:${top}<${floor}`);
-  }
+  const compReason = compensationReason(job, targets.salaryFloor);
+  if (compReason) reasons.push(compReason);
 
   // 5. Deal-breakers anywhere in the description.
   const dealBreaker = containsAny(job.descriptionText, targets.dealBreakers);
   if (dealBreaker) reasons.push(`deal-breaker:${dealBreaker}`);
 
   // 6. Already applied to this company for the same title family.
-  if (appsIndex?.has(`${job.companySlug}|${normTitle(job.title)}`)) {
+  if (appsIndex?.has(applicationIdentity(job))) {
     reasons.push('already-applied');
   }
 
   // 7. Stale postings.
   const maxAgeDays = caps.maxJobAgeDays ?? 60;
-  if (job.postedAt) {
-    const age = (Date.now() - new Date(job.postedAt).getTime()) / DAY_MS;
-    if (Number.isFinite(age) && age > maxAgeDays) reasons.push(`stale:${Math.round(age)}d`);
-  }
+  const stale = staleReason(job, maxAgeDays);
+  if (stale) reasons.push(stale);
 
   return { pass: reasons.length === 0, reasons };
 }

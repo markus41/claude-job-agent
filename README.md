@@ -104,6 +104,14 @@ anything past your daily cap, CAPTCHAs, and logins. Cancel instantly with
 
 ## Good to know
 
+- **Less manual bookkeeping.** Hunt and tailor use deterministic ranked
+  selection; `jobagent workspace --json` reports readiness and resume paths.
+  Interrupted or expired approvals can be repaired with `jobagent recover`;
+  recovery revokes stale permission and requires fresh authorization.
+- **Follow-ups stay consistent.** Drafts are tracked separately from
+  human-confirmed completion. Repeated runs skip recorded drafts; sending
+  remains your action.
+
 - **Nothing submits without your authorization** — per application, or as a
   batch you approve up front. Enforced by code, not by politeness; the AI
   cannot run either authorization command. See

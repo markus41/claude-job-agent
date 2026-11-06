@@ -91,6 +91,7 @@ if (Test-Path (Join-Path (Get-Location) 'bin/jobagent.mjs')) {
     $answer = Read-Host '    Press Enter to accept, or type a different folder path'
     if ($answer.Trim()) { $default = $answer.Trim() }
     git clone $RepoUrl $default
+    if ($LASTEXITCODE -ne 0) { throw 'Download failed; setup stopped before scaffolding.' }
     $repoDir = $default
   }
 }
@@ -100,6 +101,7 @@ Write-Ok "Using $repoDir"
 # --- 4. Scaffold private files ----------------------------------------------------
 Write-Step 'Creating your private profile/config files (never overwrites existing ones)'
 node bin/jobagent.mjs init
+if ($LASTEXITCODE -ne 0) { throw 'Workspace initialization failed; setup is incomplete.' }
 
 # --- 5. Claude Code -----------------------------------------------------------------
 Write-Step 'Checking Claude Code'

@@ -46,6 +46,19 @@ export function annualize(comp) {
   };
 }
 
+function matchComp(m, bare, text) {
+  const g = m.groups;
+  let min = toNumber(g.a1, bare ? 'k' : g.k1);
+  let max = toNumber(g.a2, bare ? 'k' : g.k2);
+  if (min == null) return null;
+  if (max != null && g.k2 && !g.k1 && !bare && min < 1000) min *= 1000;
+  if (max != null && max < min) [min, max] = [max, min];
+  const candidate = { min, max: max ?? null,
+    currency: CURRENCY_MAP[(g.cur ?? '$').toLowerCase()] ?? 'USD',
+    interval: detectInterval(text, m.index ?? 0) ?? 'yearly' };
+  return plausible(candidate) ? candidate : null;
+}
+
 export function extractComp(text) {
   if (!text) return null;
   const str = String(text);
@@ -53,26 +66,8 @@ export function extractComp(text) {
   for (const re of [WITH_CURRENCY, BARE_K_RANGE]) {
     re.lastIndex = 0;
     for (const m of str.matchAll(re)) {
-      const g = m.groups;
-      const bare = re === BARE_K_RANGE;
-      let min = toNumber(g.a1, bare ? 'k' : g.k1);
-      let max = toNumber(g.a2, bare ? 'k' : g.k2);
-      if (min == null) continue;
-      // "150-180k" — the k only appears on the upper bound.
-      if (max != null && g.k2 && !g.k1 && !bare && min < 1000) min *= 1000;
-      if (max != null && max < min) [min, max] = [max, min];
-
-      // Without explicit hourly/yearly context, assume yearly — the yearly
-      // plausibility floor then discards bonus-sized amounts like "$500".
-      const interval = detectInterval(str, m.index ?? 0) ?? 'yearly';
-
-      const candidate = {
-        min,
-        max: max ?? null,
-        currency: CURRENCY_MAP[(g.cur ?? '$').toLowerCase()] ?? 'USD',
-        interval,
-      };
-      if (plausible(candidate)) return candidate;
+      const candidate = matchComp(m, re === BARE_K_RANGE, str);
+      if (candidate) return candidate;
     }
   }
   return null;

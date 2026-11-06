@@ -10,6 +10,9 @@ submit applications.
 
 ## Procedure
 
+Resolve the workspace with `node bin/jobagent.mjs workspace --json`; use its
+absolute data paths for ingestion files.
+
 1. Run `node bin/jobagent.mjs discover`. This polls every configured target
    with a known ATS (Greenhouse / Lever / Ashby public JSON APIs) and upserts
    normalized jobs into the store. Read its summary carefully.

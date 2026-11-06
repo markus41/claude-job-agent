@@ -14,6 +14,9 @@
 //   - SSN / payment-card shaped input is blocked
 
 const HOOK_URL = import.meta.url;
+import { realpathSync, existsSync } from 'node:fs';
+import { evaluateGate, isBrowserTool } from '../../src/lib/gate.mjs';
+const canonicalPath = (path) => existsSync(path) ? realpathSync(path) : path;
 
 function deny(reason) {
   process.stdout.write(
@@ -40,8 +43,13 @@ async function main() {
   }
 
   try {
-    const [{ evaluateGate }, { loadPolicy, root }, { readSession }] = await Promise.all([
-      import(new URL('../../src/lib/gate.mjs', HOOK_URL)),
+    const independent = evaluateGate(payload);
+    if (independent?.decision === 'deny' && payload.tool_name === 'Bash') {
+      deny(independent.reason);
+      return;
+    }
+    if (!isBrowserTool(payload.tool_name)) return;
+    const [{ loadPolicy, root }, { readSession }] = await Promise.all([
       import(new URL('../../src/lib/config.mjs', HOOK_URL)),
       import(new URL('../../src/lib/store.mjs', HOOK_URL)),
     ]);
@@ -49,11 +57,12 @@ async function main() {
       policy: loadPolicy(),
       session: readSession(),
       repoRoot: root(),
+      resolvePath: canonicalPath,
     });
     if (verdict?.decision === 'deny') deny(verdict.reason);
   } catch (err) {
     // Fail closed for the high-stakes tools, open for everything else.
-    if (/^mcp__.*playwright.*__browser_/i.test(payload?.tool_name ?? '')) {
+    if (payload?.tool_name === 'Bash' || isBrowserTool(payload?.tool_name)) {
       deny(`submit gate failed internally (${err.message}) — browser tools stay locked until it is fixed.`);
     }
   }

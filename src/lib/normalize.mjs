@@ -13,6 +13,7 @@
 //   postedAt, discoveredAt, lastSeenAt  // ISO strings (postedAt may be null)
 // }
 import { extractComp } from './comp.mjs';
+import { assertCanonicalJob, assertManualEntry } from './intake.mjs';
 import { decodeEntities, nowIso, sha1, slugify, stripHtml } from './util.mjs';
 
 export function workplaceFromText(...fragments) {
@@ -43,7 +44,7 @@ function finalizeJob(partial) {
   };
   const externalId = partial.externalId ?? sha1(job.url ?? `${job.company}|${job.title}`).slice(0, 10);
   job.id = `${job.ats}:${job.companySlug}:${externalId}`;
-  return job;
+  return assertCanonicalJob(job);
 }
 
 // --- Greenhouse ------------------------------------------------------------
@@ -151,6 +152,7 @@ export function normalizeAshby(target, raw) {
 // Accepts loosely-structured objects (from the job-discovery agent) and
 // normalizes them. Required: company, title, url.
 export function normalizeManual(entry) {
+  assertManualEntry(entry);
   const required = ['company', 'title', 'url'];
   const missing = required.filter((k) => !entry?.[k]);
   if (missing.length) {
@@ -174,6 +176,17 @@ export function normalizeManual(entry) {
 }
 
 // --- ATS detection from a careers URL ----------------------------------------
+function detectGreenhouse(u, host, seg) {
+  if (seg[0] === 'embed') {
+    const slug = u.searchParams.get('for');
+    return slug ? { ats: 'greenhouse', slug } : null;
+  }
+  const eu = ['boards.eu.greenhouse.io', 'job-boards.eu.greenhouse.io'].includes(host);
+  const hosted = eu || ['boards.greenhouse.io', 'job-boards.greenhouse.io'].includes(host);
+  if (!hosted || !seg[0]) return null;
+  return { ats: 'greenhouse', slug: seg[0], ...(eu ? { region: 'eu' } : {}) };
+}
+
 export function detectAts(url) {
   let u;
   try {
@@ -184,21 +197,7 @@ export function detectAts(url) {
   const host = u.hostname.toLowerCase();
   const seg = u.pathname.split('/').filter(Boolean);
 
-  if (host === 'boards.greenhouse.io' || host === 'job-boards.greenhouse.io') {
-    // https://boards.greenhouse.io/{slug}[/jobs/{id}] or /embed/job_board?for={slug}
-    if (seg[0] === 'embed') {
-      const slug = u.searchParams.get('for');
-      return slug ? { ats: 'greenhouse', slug } : null;
-    }
-    return seg[0] ? { ats: 'greenhouse', slug: seg[0] } : null;
-  }
-  if (host === 'boards.eu.greenhouse.io' || host === 'job-boards.eu.greenhouse.io') {
-    return seg[0] ? { ats: 'greenhouse', slug: seg[0], region: 'eu' } : null;
-  }
-  if (host.endsWith('greenhouse.io') && seg[0] === 'embed') {
-    const slug = u.searchParams.get('for');
-    return slug ? { ats: 'greenhouse', slug } : null;
-  }
+  if (host === 'greenhouse.io' || host.endsWith('.greenhouse.io')) return detectGreenhouse(u, host, seg);
   if (host === 'jobs.lever.co') {
     return seg[0] ? { ats: 'lever', slug: seg[0] } : null;
   }

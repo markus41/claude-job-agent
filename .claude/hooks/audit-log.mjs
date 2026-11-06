@@ -4,6 +4,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { paths } from '../../src/lib/config.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -26,7 +27,7 @@ async function main() {
     ...(input.paths ? { paths: input.paths } : {}),
     ...(input.command ? { command: String(input.command).slice(0, 200) } : {}),
   };
-  const dataDir = join(REPO_ROOT, 'data');
+  const dataDir = paths().dataDir;
   mkdirSync(dataDir, { recursive: true });
   appendFileSync(join(dataDir, 'audit.log'), `${JSON.stringify(entry)}\n`);
 }

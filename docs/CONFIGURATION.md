@@ -148,6 +148,31 @@ Scheduler runs are bounded to sourcing→tailoring.
 
 ## What is deliberately NOT configurable
 
+Effective policy values are validated after merging. Numeric strings,
+negative caps, invalid modes and scoring weights that do not total 100 are
+rejected before the pipeline runs. Both manual and auto authorization modes
+are supported by doctor; it does not change the mode.
+
+Workflow inspection and tracking commands:
+
+```bash
+node bin/jobagent.mjs workspace --json
+node bin/jobagent.mjs workspace --app app-xxxxxxxx --json
+node bin/jobagent.mjs select --limit 3 --json
+node bin/jobagent.mjs recover
+node bin/jobagent.mjs follow-up-draft app-xxxxxxxx <dueAt>
+node bin/jobagent.mjs follow-up-complete app-xxxxxxxx <dueAt> --confirmed --note "Human reports sent"
+```
+
+Use the exact due date and draft filename returned by status. Completion is
+recordkeeping after the human's explicit report; it does not send anything.
+Recovery never creates permission, replaces a live session, or refunds a
+consumed batch slot. A previously armed application cannot retry under the
+same batch; the human must inspect any uncertain previous outcome before
+fresh authorization. Corrupt batch authorization is reported as damaged and
+preserved. State-lock contention fails with a retry message rather than
+waiting or bypassing the lock.
+
 - **Authorization always comes from a human at a terminal.** `approve` and
   `auto-enable` both require a TTY and a typed confirmation, and both are
   hook-blocked for agents. Auto mode changes the *granularity* of your

@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readJson } from './util.mjs';
+import { validatePolicy } from './policy.mjs';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(MODULE_DIR, '..', '..');
@@ -16,6 +17,7 @@ export function paths() {
   const r = root();
   return {
     root: r,
+    projectRoot: REPO_ROOT,
     dataDir: join(r, 'data'),
     stateDir: join(r, 'data', 'state'),
     jobsFile: join(r, 'data', 'jobs.json'),
@@ -118,8 +120,8 @@ export const DEFAULT_POLICY = {
 };
 
 function deepMerge(base, override) {
-  if (override == null) return base;
-  if (Array.isArray(base) || Array.isArray(override) || typeof base !== 'object' || typeof override !== 'object') {
+  if (override === undefined) return base;
+  if (!base || !override || Array.isArray(base) || Array.isArray(override) || typeof base !== 'object' || typeof override !== 'object') {
     return override;
   }
   const out = { ...base };
@@ -131,8 +133,9 @@ function deepMerge(base, override) {
 
 export function loadPolicy() {
   const p = paths();
-  const user = readJson(p.policyFile, null);
-  return deepMerge(DEFAULT_POLICY, user ?? {});
+  const user = readJson(p.policyFile, {});
+  if (!user || typeof user !== 'object' || Array.isArray(user)) throw new Error('Invalid policy: root must be an object');
+  return validatePolicy(deepMerge(DEFAULT_POLICY, user));
 }
 
 export function loadCompanies() {
