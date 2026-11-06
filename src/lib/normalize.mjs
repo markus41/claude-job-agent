@@ -13,6 +13,7 @@
 //   postedAt, discoveredAt, lastSeenAt  // ISO strings (postedAt may be null)
 // }
 import { extractComp } from './comp.mjs';
+import { assertCanonicalJob, assertManualEntry } from './intake.mjs';
 import { decodeEntities, nowIso, sha1, slugify, stripHtml } from './util.mjs';
 
 export function workplaceFromText(...fragments) {
@@ -43,7 +44,7 @@ function finalizeJob(partial) {
   };
   const externalId = partial.externalId ?? sha1(job.url ?? `${job.company}|${job.title}`).slice(0, 10);
   job.id = `${job.ats}:${job.companySlug}:${externalId}`;
-  return job;
+  return assertCanonicalJob(job);
 }
 
 // --- Greenhouse ------------------------------------------------------------
@@ -151,6 +152,7 @@ export function normalizeAshby(target, raw) {
 // Accepts loosely-structured objects (from the job-discovery agent) and
 // normalizes them. Required: company, title, url.
 export function normalizeManual(entry) {
+  assertManualEntry(entry);
   const required = ['company', 'title', 'url'];
   const missing = required.filter((k) => !entry?.[k]);
   if (missing.length) {

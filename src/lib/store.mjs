@@ -7,6 +7,8 @@ import { paths } from './config.mjs';
 import { autoPreflight, readAttestation } from './auto.mjs';
 import { ensureDir, nowIso, readJson, sha1, slugify, truncate, writeJsonAtomic } from './util.mjs';
 import { writeTrackerFiles } from './workbook.mjs';
+import { assertCanonicalJob } from './intake.mjs';
+import { applicationPath } from './package-paths.mjs';
 
 // --- Jobs --------------------------------------------------------------------
 
@@ -19,6 +21,7 @@ export function saveJobs(db) {
 }
 
 export function upsertJobs(newJobs) {
+  newJobs.forEach(assertCanonicalJob);
   const db = loadJobs();
   let added = 0;
   let seenAgain = 0;
@@ -142,6 +145,7 @@ export function getApp(appId) {
 }
 
 export function createApplication(job, { force = false } = {}) {
+  assertCanonicalJob(job);
   const db = loadApps();
   const dup = Object.values(db.apps).find(
     (a) => a.jobId === job.id && ACTIVE_STATUSES.has(a.status)
@@ -153,7 +157,7 @@ export function createApplication(job, { force = false } = {}) {
   }
   const id = `app-${sha1(`${job.id}|${nowIso()}`).slice(0, 8)}`;
   const dirName = `${job.companySlug}-${truncate(slugify(job.title), 40).replace(/…$/, '')}-${id.slice(4)}`;
-  const dir = join(paths().applicationsDir, dirName);
+  const dir = applicationPath(dirName);
   ensureDir(dir);
   writeJsonAtomic(join(dir, 'job.json'), job);
 
