@@ -43,3 +43,15 @@ Malformed rows must not partly persist. Existing path links must not escape pack
 - Record exact checks, responsibilities, analyzer results, assumptions and remaining UNKNOWNs.
 - Open a ready PR, link it immediately, read it back, leave unmerged.
 
+## Completion record
+
+- Task 1 complete: intake and effective-policy validation, commit `86e625d`.
+- Tasks 2–3 complete: workspace/selection and serialized authorization/recovery,
+  commit `25a920f`, followed by integration in `4f7d4f9`.
+- Task 4 complete: follow-ups, agent orchestration, tooling and docs in `4f7d4f9`;
+  eight final-review findings repaired in `d6a1785`, with 95 tests passing.
+- Task 5 complete: ready PR #1 linked and read back; evidence, exact code
+  snapshot, responsibilities, decisions and UNKNOWNs recorded in
+  [verification](../../verification/2026-11-05-autonomous-workflow.md).
+- No task dropped. Merge, deployment and live submission are outside authorization.
+

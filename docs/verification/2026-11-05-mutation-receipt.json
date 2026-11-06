@@ -1,0 +1,55 @@
+{
+  "commit": "d6a1785ea176b8170d89d6e74358f78265418c8c",
+  "node": "v24.22.1",
+  "platform": "win32",
+  "results": [
+    {
+      "guard": "whole-batch intake validation",
+      "test": "intake.test.mjs",
+      "pattern": "store rejects canonical jobs",
+      "baselineExit": 0,
+      "removedExit": 1,
+      "restoredExit": 0
+    },
+    {
+      "guard": "existing-link containment",
+      "test": "intake.test.mjs",
+      "pattern": "existing symbolic-link",
+      "baselineExit": 0,
+      "removedExit": 1,
+      "restoredExit": 0
+    },
+    {
+      "guard": "effective-policy validation",
+      "test": "intake.test.mjs",
+      "pattern": "merged policy rejects",
+      "baselineExit": 0,
+      "removedExit": 1,
+      "restoredExit": 0
+    },
+    {
+      "guard": "pending-journal browser denial",
+      "test": "recovery.test.mjs",
+      "pattern": "pending authorization journal",
+      "baselineExit": 0,
+      "removedExit": 1,
+      "restoredExit": 0
+    },
+    {
+      "guard": "expired-session browser denial",
+      "test": "gate.test.mjs",
+      "pattern": "browser tools locked",
+      "baselineExit": 0,
+      "removedExit": 1,
+      "restoredExit": 0
+    },
+    {
+      "guard": "concurrent writer exclusion",
+      "test": "state-mutation.test.mjs",
+      "pattern": "concurrent processes",
+      "baselineExit": 0,
+      "removedExit": 1,
+      "restoredExit": 0
+    }
+  ]
+}
