@@ -11,9 +11,16 @@ beforeEach(() => { process.env.JOBAGENT_HOME = mkdtempSync(join(tmpdir(), 'jobag
 const entry = (over = {}) => ({ company: 'Example', title: 'Engineer', url: 'https://careers.example.test/jobs/1', ...over });
 
 test('manual intake rejects unsafe slugs, invalid URLs and wrong field types', () => {
-  for (const over of [{ companySlug: '../escape' }, { companySlug: 'foo/bar' }, { url: 'bad' }, { applyUrl: 'file:///tmp/x' }, { title: {} }, { description: 42 }, { comp: { min: 'many' } }]) {
+  for (const over of [{ companySlug: '../escape' }, { companySlug: 'foo/bar' }, { url: 'bad' }, { url: ['https://careers.example.test/'] }, { applyUrl: ['https://careers.example.test/'] }, { postedAt: ['2026-11-01'] }, { applyUrl: 'file:///tmp/x' }, { title: {} }, { description: 42 }, { comp: { min: 'many' } }]) {
     assert.throws(() => normalizeManual(entry(over)), /invalid|must|unsafe/i);
   }
+});
+
+test('a present null policy is rejected while an absent policy uses defaults', () => {
+  assert.equal(loadPolicy().approval.mode, 'manual');
+  mkdirSync(paths().configDir, { recursive: true });
+  writeFileSync(paths().policyFile, 'null');
+  assert.throws(() => loadPolicy(), /policy|object/i);
 });
 
 test('store rejects canonical jobs before any batch member persists', () => {

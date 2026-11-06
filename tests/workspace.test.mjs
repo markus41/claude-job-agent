@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { beforeEach, test } from 'node:test';
 import { paths, DEFAULT_POLICY } from '../src/lib/config.mjs';
 import { normalizeManual } from '../src/lib/normalize.mjs';
-import { upsertJobs, importScores, createApplication } from '../src/lib/store.mjs';
+import { upsertJobs, importScores, createApplication, loadApps, saveApps } from '../src/lib/store.mjs';
 
 beforeEach(() => { process.env.JOBAGENT_HOME = mkdtempSync(join(tmpdir(), 'jobagent-workspace-')); });
 const cli = (...args) => spawnSync(process.execPath, ['bin/jobagent.mjs', ...args], { encoding: 'utf8', env: { ...process.env } });
@@ -58,5 +58,31 @@ test('init can scaffold a relocated workspace from committed examples', () => {
   const value = JSON.parse(state.stdout);
   assert.ok(value.blockers.some((x) => /placeholder/.test(x)));
   assert.equal(value.blockers.some((x) => /missing profile/.test(x)), false);
+});
+
+test('selection keeps one company/title per batch and fills the cap with distinct work', async () => {
+  const { selectForTailoring } = await import('../src/pipeline/select.mjs');
+  const jobs = ['1', '2', '3'].map((id) => normalizeManual({ company: id === '3' ? 'Other' : 'Example', title: 'Engineer', url: 'https://careers.example.test/' + id }));
+  upsertJobs(jobs);
+  importScores(jobs.map((j, i) => ({ jobId: j.id, score: 90 + i, verdict: i === 0 ? 'strong' : 'good' })));
+  const result = selectForTailoring({ targets: {} }, DEFAULT_POLICY, { limit: 3 });
+  assert.deepEqual(result.items.map((j) => j.id), [jobs[0].id, jobs[2].id]);
+  createApplication(result.items[0]);
+  assert.throws(() => createApplication(jobs[1]), /active application|already exists/i);
+});
+
+test('offers stay active while closed and rejected applications allow new listings through shortlist', async () => {
+  const { selectForTailoring } = await import('../src/pipeline/select.mjs');
+  const { shortlist } = await import('../src/pipeline/shortlist.mjs');
+  const job = normalizeManual({ company: 'Example', title: 'Engineer', url: 'https://careers.example.test/offer' });
+  upsertJobs([job]); importScores([{ jobId: job.id, score: 90, verdict: 'strong' }]);
+  const app = createApplication(job); const db = loadApps(); db.apps[app.id].status = 'offer'; saveApps(db);
+  assert.equal(selectForTailoring({ targets: {} }, DEFAULT_POLICY).items.length, 0);
+  for (const status of ['closed', 'rejected']) {
+    db.apps[app.id].status = status; saveApps(db);
+    const replacement = normalizeManual({ company: 'Example', title: 'Engineer', url: 'https://careers.example.test/' + status });
+    upsertJobs([replacement]);
+    assert.ok(shortlist({ targets: {} }, DEFAULT_POLICY).items.some((j) => j.jobId === replacement.id));
+  }
 });
 

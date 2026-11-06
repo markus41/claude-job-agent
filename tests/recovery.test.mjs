@@ -69,6 +69,8 @@ test('failed session publication remains locked and recovery never refunds an au
   assert.equal(store.readSession(), null); assert.equal(readAttestation().used, 1);
   store.recoverAuthorization();
   assert.equal(store.getApp(a.id).status, 'queued'); assert.equal(readAttestation().used, 1);
+  assert.throws(() => store.autoArm(a.id, { policy, hasResumePdf: true }), /already.*batch|previous attempt/i);
+  assert.equal(readAttestation().used, 1);
 });
 
 test('recording blocked revokes the matching armed session without a separate command', () => {
@@ -76,5 +78,56 @@ test('recording blocked revokes the matching armed session without a separate co
   store.recordStatus(a.id, 'blocked', { note: 'Synthetic login wall' });
   assert.equal(store.readSession(), null);
   assert.equal(existsSync(paths().sessionFile), false);
+});
+
+test('recovery revokes malformed session JSON and requeues its approved application', () => {
+  const a = queued(1); store.approveApplication(a.id);
+  writeFileSync(paths().sessionFile, '{"appId":');
+  assert.doesNotThrow(() => store.recoverAuthorization());
+  assert.equal(store.getApp(a.id).status, 'queued');
+  assert.equal(store.readSession(), null);
+  assert.equal(existsSync(paths().sessionFile), false);
+});
+
+test('an invalid session expiry is stale for inspection and recovery', () => {
+  const a = queued(1); store.approveApplication(a.id);
+  const session = JSON.parse(readFileSync(paths().sessionFile, 'utf8'));
+  session.expiresAt = 'invalid'; writeFileSync(paths().sessionFile, JSON.stringify(session));
+  assert.ok(!store.readSession() || store.readSession().expired);
+  store.recoverAuthorization();
+  assert.equal(store.getApp(a.id).status, 'queued');
+});
+
+test('corrupt batch authorization revokes its session without replacing the attestation', () => {
+  const a = queued(1); store.approveApplication(a.id); const p = paths();
+  const session = JSON.parse(readFileSync(p.sessionFile, 'utf8'));
+  session.autoAttestedAt = new Date().toISOString(); writeFileSync(p.sessionFile, JSON.stringify(session));
+  writeFileSync(p.autoAttestationFile, '{"used":');
+  assert.equal(store.readSession(), null);
+  store.recoverAuthorization();
+  assert.equal(store.getApp(a.id).status, 'queued');
+  assert.equal(readFileSync(p.autoAttestationFile, 'utf8'), '{"used":');
+});
+
+test('a batch without its attestation identity cannot grant permission', async () => {
+  const { DEFAULT_POLICY } = await import('../src/lib/config.mjs');
+  const { buildAttestation, readAttestation } = await import('../src/lib/auto.mjs');
+  const a = queued(1); const p = paths();
+  store.importScores([{ jobId: a.jobId, score: 90, verdict: 'strong' }]);
+  for (const file of ['resume.md', 'cover-letter.md', 'answers.md']) writeFileSync(join(p.applicationsDir, a.dir, file), 'Synthetic material');
+  const att = buildAttestation({ batchLimit: 2, ttlHours: 1, requireScore: 80 }); delete att.attestedAt;
+  writeFileSync(p.autoAttestationFile, JSON.stringify(att));
+  const policy = structuredClone(DEFAULT_POLICY); policy.approval.mode = 'auto';
+  assert.throws(() => store.autoArm(a.id, { policy, hasResumePdf: true }), /damaged|expired/i);
+  assert.equal(store.readSession(), null);
+  assert.equal(readAttestation().invalid, true);
+});
+
+test('read-only status reports a journal left before approval was persisted', async () => {
+  const { buildStatus } = await import('../src/pipeline/report.mjs');
+  const a = queued(1); const journal = join(paths().stateDir, 'authorization-pending.json');
+  writeFileSync(journal, JSON.stringify({ appId: a.id }));
+  assert.equal(buildStatus().recoveryNeeded, true);
+  assert.equal(store.getApp(a.id).status, 'queued'); assert.equal(existsSync(journal), true);
 });
 

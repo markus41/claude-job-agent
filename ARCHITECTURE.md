@@ -260,13 +260,27 @@ The repo ships two ways, deliberately asymmetric:
   resume precedence. The project root owns installed hooks/examples; the
   workspace root owns private data.
 - `pipeline/select.mjs` orders eligible strong/good jobs by verdict, descending
-  score and job id, capped by policy and excluding active packages.
+  score and job id, capped by policy and reserving one company/title identity
+  per returned batch. `lifecycle.mjs` shares that identity and active statuses
+  with shortlisting and package creation. Offers remain active until closed.
 - `authorization.mjs` publishes browser permission last under the shared
   application-state lock. A pending journal denies the browser. Recovery
   revokes permission and requeues interrupted approvals; consumed batch slots
-  are retained. This is conservative recovery, not a general transaction engine.
+  are retained. Corrupt session records are revoked; damaged batch authorization
+  stays on disk and requires human review. An application already armed in a
+  batch cannot use that batch again after recovery. This is conservative
+  recovery, not a general transaction engine.
 - `follow-ups.mjs` gives status and spreadsheet one due/completed definition.
   Draft and completion records are idempotent by application and due date.
+
+State writers publish uniquely owned choosing/ticket files under `data/state/writers/`
+and rescan live contenders before mutation. Contention fails immediately;
+there is no waiting loop. Dead owners are ignored without deleting another
+writer's receipt, so interrupted reclamation cannot strand the workspace.
+Unreadable live ownership stays locked. Live legacy lock files are respected;
+run only one installed version against a workspace at a time. PID reuse or an
+unreadable legacy receipt can require ownership diagnosis. Locks assume a local
+filesystem, rather than a shared network drive.
 
 The submission tool adapter is pinned to Playwright MCP 0.0.84. Arbitrary
 scripts and unclassified operations are denied. Known click/type/form

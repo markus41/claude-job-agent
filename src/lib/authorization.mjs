@@ -7,6 +7,12 @@ import { readJson, writeJsonAtomic } from './util.mjs';
 
 export const authorizationJournal = () => join(paths().stateDir, 'authorization-pending.json');
 
+export function authorizationRecoveryNeeded(apps, session) {
+  const invalidSession = !session || session.expired;
+  return existsSync(authorizationJournal()) || (invalidSession &&
+    (existsSync(paths().sessionFile) || apps.some((app) => app.status === 'approved')));
+}
+
 export function prepareSession(app, { ttlMinutes = 60, attestation } = {}) {
   if (!Number.isFinite(ttlMinutes) || ttlMinutes <= 0) throw new Error('Session TTL must be a positive finite number');
   const url = assertWebUrl(app.applyUrl, 'applyUrl');
@@ -21,7 +27,9 @@ export function prepareSession(app, { ttlMinutes = 60, attestation } = {}) {
   };
 }
 
-export function rawSession() { return readJson(paths().sessionFile, null); }
+export function rawSession() {
+  try { return readJson(paths().sessionFile, null); } catch { return null; }
+}
 
 export function assertNoActiveSession() {
   const session = rawSession();
@@ -38,6 +46,7 @@ export function commitAuthorization({ app, session, persist, audit }) {
 
 export function recoverState({ loadApps, saveApps, audit, isSessionValid }) {
   const pending = existsSync(authorizationJournal());
+  const sessionExisted = existsSync(paths().sessionFile);
   const session = rawSession();
   const db = loadApps();
   const stale = !session || !isSessionValid();
@@ -52,7 +61,8 @@ export function recoverState({ loadApps, saveApps, audit, isSessionValid }) {
   }
   if (changed) saveApps(db);
   if (pending) rmSync(authorizationJournal());
-  if (pending || changed) audit({ actor: 'cli', event: 'authorization-recovered', interrupted: pending });
-  return { recovered: pending || changed };
+  const recovered = pending || changed || sessionExisted;
+  if (recovered) audit({ actor: 'cli', event: 'authorization-recovered', interrupted: pending });
+  return { recovered };
 }
 

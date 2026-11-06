@@ -2,7 +2,7 @@
 // Cheap, explainable, and they keep LLM scoring volume (and cost) down.
 // Nuanced judgment belongs to the fit-scorer agent, not here.
 import { annualize } from './comp.mjs';
-import { normTitle } from './util.mjs';
+import { ACTIVE_STATUSES, applicationIdentity } from './lifecycle.mjs';
 
 const DAY_MS = 86_400_000;
 
@@ -19,8 +19,7 @@ function containsAny(haystack, needles = []) {
 export function buildAppsIndex(apps) {
   const index = new Set();
   for (const app of Object.values(apps ?? {})) {
-    if (app.status === 'withdrawn') continue;
-    index.add(`${app.companySlug}|${normTitle(app.title)}`);
+    if (ACTIVE_STATUSES.has(app.status)) index.add(applicationIdentity(app));
   }
   return index;
 }
@@ -68,7 +67,7 @@ export function hardFilter(job, profile, appsIndex, policy) {
   if (dealBreaker) reasons.push(`deal-breaker:${dealBreaker}`);
 
   // 6. Already applied to this company for the same title family.
-  if (appsIndex?.has(`${job.companySlug}|${normTitle(job.title)}`)) {
+  if (appsIndex?.has(applicationIdentity(job))) {
     reasons.push('already-applied');
   }
 

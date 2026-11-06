@@ -8,6 +8,7 @@ import { autoPreflight, readAttestation } from './auto.mjs';
 import { ensureDir, nowIso, readJson, sha1, slugify, truncate, writeJsonAtomic } from './util.mjs';
 import { writeTrackerFiles } from './workbook.mjs';
 import { assertCanonicalJob } from './intake.mjs';
+import { TRANSITIONS, ACTIVE_STATUSES, applicationIdentity } from './lifecycle.mjs';
 import { applicationPath } from './package-paths.mjs';
 import { stateMutation } from './state-mutation.mjs';
 import { followUpDraftName, updateFollowUp } from './follow-ups.mjs';
@@ -92,27 +93,9 @@ export const importScores = stateMutation(function importScores(entries) {
 
 // Lifecycle: packaged → tailored → queued → approved → submitted → confirmed →
 // interview → offer → closed, with blocked/withdrawn/rejected side-exits.
-// "approved" is deliberately reachable ONLY through `jobagent approve`
-// (human, interactive terminal) — never through `record`.
-export const TRANSITIONS = {
-  packaged: ['tailored', 'withdrawn'],
-  tailored: ['queued', 'withdrawn'],
-  queued: ['approved', 'blocked', 'withdrawn'],
-  approved: ['submitted', 'blocked', 'queued', 'withdrawn'],
-  submitted: ['confirmed', 'rejected', 'interview', 'blocked', 'closed'],
-  confirmed: ['rejected', 'interview', 'closed'],
-  interview: ['offer', 'rejected', 'closed'],
-  blocked: ['queued', 'withdrawn', 'closed'],
-  offer: ['closed'],
-  rejected: ['closed'],
-  withdrawn: [],
-  closed: [],
-};
-
-export const ACTIVE_STATUSES = new Set([
-  'packaged', 'tailored', 'queued', 'approved', 'submitted', 'confirmed', 'interview', 'blocked',
-]);
-
+// Approval comes from a human terminal or auto-arm under a human attestation;
+// it is never reachable through record.
+export { TRANSITIONS, ACTIVE_STATUSES } from './lifecycle.mjs';
 export function loadApps() {
   return readJson(paths().appsFile, { version: 1, apps: {} });
 }
@@ -151,10 +134,10 @@ export const createApplication = stateMutation(function createApplication(job, {
   assertCanonicalJob(job);
   const db = loadApps();
   const dup = Object.values(db.apps).find(
-    (a) => a.jobId === job.id && ACTIVE_STATUSES.has(a.status)
+    (a) => ACTIVE_STATUSES.has(a.status) && (a.jobId === job.id || applicationIdentity(a) === applicationIdentity(job))
   );
   if (dup && !force) {
-    const err = new Error(`An active application for this job already exists: ${dup.id} (${dup.status}). Use --force to create another.`);
+    const err = new Error(`An active application for this job or company/title already exists: ${dup.id} (${dup.status}). Use --force to create another.`);
     err.code = 'EDUPLICATE';
     throw err;
   }
@@ -320,7 +303,7 @@ export function readSession() {
     const att = readAttestation();
     if (!att || att.expired || att.attestedAt !== session.autoAttestedAt) return null;
   }
-  if (new Date(session.expiresAt).getTime() < Date.now()) return { ...session, expired: true };
+  if (!(Date.parse(session.expiresAt) > Date.now())) return { ...session, expired: true };
   return session;
 }
 

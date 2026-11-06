@@ -2,6 +2,7 @@
 const fail = (field, rule) => { throw new Error(`Invalid job ${field}: ${rule}`); };
 
 export function assertWebUrl(value, field = 'url') {
+  if (typeof value !== 'string') fail(field, 'must be an HTTP(S) URL string');
   let url;
   try { url = new URL(value); } catch { fail(field, 'must be an HTTP(S) URL'); }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
@@ -40,7 +41,7 @@ export function assertCanonicalJob(job) {
   assertWebUrl(job.applyUrl ?? job.url, 'applyUrl');
   for (const field of ['location', 'descriptionText']) assertText(job[field], field, { optional: true });
   if (job.workplace != null && !['remote', 'hybrid', 'onsite'].includes(job.workplace)) fail('workplace', 'invalid value');
-  if (job.postedAt != null && !Number.isFinite(Date.parse(job.postedAt))) fail('postedAt', 'must be a valid date');
+  if (job.postedAt != null && (typeof job.postedAt !== 'string' || !Number.isFinite(Date.parse(job.postedAt)))) fail('postedAt', 'must be a valid date string');
   assertComp(job.comp);
   return job;
 }

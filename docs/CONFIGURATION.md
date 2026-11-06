@@ -167,8 +167,11 @@ node bin/jobagent.mjs follow-up-complete app-xxxxxxxx <dueAt> --confirmed --note
 Use the exact due date and draft filename returned by status. Completion is
 recordkeeping after the human's explicit report; it does not send anything.
 Recovery never creates permission, replaces a live session, or refunds a
-consumed batch slot. State-lock contention fails with a retry message rather
-than waiting or bypassing the lock.
+consumed batch slot. A previously armed application cannot retry under the
+same batch; the human must inspect any uncertain previous outcome before
+fresh authorization. Corrupt batch authorization is reported as damaged and
+preserved. State-lock contention fails with a retry message rather than
+waiting or bypassing the lock.
 
 - **Authorization always comes from a human at a terminal.** `approve` and
   `auto-enable` both require a TTY and a typed confirmation, and both are

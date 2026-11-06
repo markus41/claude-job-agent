@@ -133,8 +133,9 @@ function deepMerge(base, override) {
 
 export function loadPolicy() {
   const p = paths();
-  const user = readJson(p.policyFile, null);
-  return validatePolicy(deepMerge(DEFAULT_POLICY, user ?? {}));
+  const user = readJson(p.policyFile, {});
+  if (!user || typeof user !== 'object' || Array.isArray(user)) throw new Error('Invalid policy: root must be an object');
+  return validatePolicy(deepMerge(DEFAULT_POLICY, user));
 }
 
 export function loadCompanies() {

@@ -357,16 +357,12 @@ async function cmdDisarm() {
 
 // --- Auto-submit mode -----------------------------------------------------------
 
-function resumePdfAvailable() {
-  return Boolean(resolveResume());
-}
-
 function eligibleForAuto(policy, attestation) {
   const apps = loadApps().apps;
   const queued = Object.values(apps).filter((a) => a.status === 'queued');
   return queued.map((app) => {
     const job = getJob(app.jobId);
-    const blockers = autoPreflight({ app, job, policy, attestation, apps, hasResumePdf: Boolean(resolveResume(app)) });
+    const blockers = autoPreflight({ app, job, policy, attestation, apps });
     return {
       appId: app.id,
       company: app.company,

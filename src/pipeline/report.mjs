@@ -1,6 +1,7 @@
 // Builds the status snapshot used by `jobagent status` and the /status command.
 import { loadApps, loadJobs, readSession, submittedToday } from '../lib/store.mjs';
 import { pendingFollowUps } from '../lib/follow-ups.mjs';
+import { authorizationRecoveryNeeded } from '../lib/authorization.mjs';
 
 export function buildStatus() {
   const jobs = Object.values(loadJobs().jobs);
@@ -34,7 +35,7 @@ export function buildStatus() {
     session: session
       ? { appId: session.appId, expiresAt: session.expiresAt, expired: Boolean(session.expired) }
       : null,
-    recoveryNeeded: apps.some((a) => a.status === 'approved') && (!session || session.expired),
+    recoveryNeeded: Boolean(authorizationRecoveryNeeded(apps, session)),
     followUpsDue,
   };
 }

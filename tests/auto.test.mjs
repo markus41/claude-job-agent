@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, test } from 'node:test';
+import { spawnSync } from 'node:child_process';
 
 process.env.JOBAGENT_HOME = mkdtempSync(join(tmpdir(), 'jobagent-auto-'));
 
@@ -10,7 +11,7 @@ const { DEFAULT_POLICY, paths } = await import('../src/lib/config.mjs');
 const { autoPreflight, buildAttestation, readAttestation } = await import('../src/lib/auto.mjs');
 const {
   autoArm, createApplication, loadApps, readSession, recordStatus,
-  revokeAttestation, saveAttestation, upsertJobs, getJob,
+  revokeAttestation, saveAttestation, upsertJobs, getJob, saveApps,
 } = await import('../src/lib/store.mjs');
 
 const AUTO_POLICY = {
@@ -189,4 +190,19 @@ test('daily cap blocks auto-submit regardless of batch size', () => {
     hasResumePdf: true,
   });
   assert.ok(blockers.some((b) => b.includes('daily cap reached')));
+});
+
+test('auto-next reports an unsafe legacy package as blocked and continues with other applications', () => {
+  const unsafe = queuedApp();
+  const valid = queuedApp({ job: makeJob({ id: 'manual:other:1', company: 'Other', companySlug: 'other' }) });
+  const db = loadApps(); db.apps[unsafe.id].dir = '../outside'; saveApps(db);
+  const p = paths(); mkdirSync(p.configDir, { recursive: true });
+  writeFileSync(p.policyFile, JSON.stringify({ approval: { mode: 'auto', auto: { requireResumePdf: false } } }));
+  saveAttestation(buildAttestation({ batchLimit: 2, ttlHours: 1, requireScore: 80 }));
+  const result = spawnSync(process.execPath, ['bin/jobagent.mjs', 'auto-next', '--json'], { env: { ...process.env }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const state = JSON.parse(result.stdout);
+  assert.equal(state.find((a) => a.appId === unsafe.id).eligible, false);
+  assert.match(state.find((a) => a.appId === unsafe.id).blockers.join(' '), /unsafe/i);
+  assert.equal(state.find((a) => a.appId === valid.id).eligible, true);
 });

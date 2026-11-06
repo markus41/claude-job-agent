@@ -6,15 +6,21 @@ import { hostMatches } from './gate.mjs';
 import { assertWebUrl } from './intake.mjs';
 import { validatePolicy } from './policy.mjs';
 
+const validDate = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value));
+
 export function readAttestation() {
-  const att = readJson(paths().autoAttestationFile, null);
+  let att;
+  try { att = readJson(paths().autoAttestationFile, null); } catch {
+    return { invalid: true, expired: true, exhausted: true, remaining: 0 };
+  }
   if (!att) return null;
   const invalid = !Number.isInteger(att.batchLimit) || att.batchLimit < 1
     || !Number.isInteger(att.used) || att.used < 0 || !Number.isFinite(att.requireScore)
-    || att.requireScore < 0 || att.requireScore > 100 || !Number.isFinite(Date.parse(att.expiresAt));
+    || att.requireScore < 0 || att.requireScore > 100 || !validDate(att.expiresAt) || !validDate(att.attestedAt)
+    || !Array.isArray(att.submittedAppIds) || !att.submittedAppIds.every((id) => typeof id === 'string');
   const expired = invalid || Date.parse(att.expiresAt) <= Date.now();
   const exhausted = invalid || att.used >= att.batchLimit;
-  return { ...att, expired, exhausted, remaining: invalid ? 0 : Math.max(0, att.batchLimit - att.used) };
+  return { ...att, invalid, expired, exhausted, remaining: invalid ? 0 : Math.max(0, att.batchLimit - att.used) };
 }
 
 export function buildAttestation({ batchLimit, ttlHours, requireScore, note = '' }) {
@@ -30,6 +36,7 @@ function authorizationBlockers(policy, attestation) {
   try { validatePolicy(policy); } catch (err) { blockers.push(err.message); }
   if (policy?.approval?.mode !== 'auto') blockers.push('auto mode is off (set approval.mode = "auto" in config/policy.json)');
   if (!attestation) return [...blockers, 'no batch authorization — a human must run jobagent auto-enable personally'];
+  if (attestation.invalid) blockers.push('batch authorization is damaged; a human must inspect previous outcomes and reauthorize');
   if (attestation.expired || !(Date.parse(attestation.expiresAt) > Date.now())) blockers.push('batch authorization expired at ' + attestation.expiresAt);
   if (attestation.exhausted || attestation.used >= attestation.batchLimit) blockers.push('batch authorization used up — needs re-authorizing');
   return blockers;
@@ -43,6 +50,11 @@ function scoreBlockers(job, policy, attestation) {
 }
 
 function packageBlockers(app, cfg, hasResumePdf) {
+  try { return inspectPackageBlockers(app, cfg, hasResumePdf); }
+  catch (err) { return [err.message]; }
+}
+
+function inspectPackageBlockers(app, cfg, hasResumePdf) {
   const packageState = inspectPackage(app);
   const blockers = [...packageState.blockers];
   if (cfg.blockOnNeedsHumanInput && packageState.needsHumanInput) blockers.push('answers.md still contains NEEDS HUMAN INPUT — human input required');
@@ -70,6 +82,7 @@ function hostBlockers(app, policy) {
 export function autoPreflight({ app, job, policy, attestation, apps, hasResumePdf }) {
   const blockers = authorizationBlockers(policy, attestation);
   if (!app) return [...blockers, 'unknown application'];
+  if (attestation?.submittedAppIds?.includes(app.id)) blockers.push('application was already armed in this batch; inspect the previous attempt before fresh human authorization');
   if (app.status !== 'queued') blockers.push(`application is "${app.status}", not "queued"`);
   try { validatePolicy(policy); } catch { return blockers; }
   return [...blockers, ...scoreBlockers(job, policy, attestation),
